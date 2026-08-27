@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="GrowthAI Assistant Avatar">
+  <defs>
+    <linearGradient id="aiBgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#04060a" />
+    </linearGradient>
+    <linearGradient id="aiAccentGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#93c5fd" />
+    </linearGradient>
+    <radialGradient id="aiGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background Container -->
+  <rect width="128" height="128" rx="28" fill="url(#aiBgGrad)" stroke="#1e293b" stroke-width="2" />
+
+  <!-- Ambient Glow Effect -->
+  <circle cx="64" cy="64" r="42" fill="url(#aiGlow)" />
+
+  <!-- AI Intelligence Core & Neural Network -->
+  <g transform="translate(16, 16)">
+    <!-- Outer Orbital Ring / Circuit -->
+    <circle cx="48" cy="48" r="32" fill="none" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4 4" />
+    <circle cx="48" cy="48" r="26" fill="none" stroke="#3b82f6" stroke-width="1" stroke-opacity="0.3" />
+
+    <!-- Connected Intelligence Nodes / Hex-Synth Motif -->
+    <path d="M 48 20 L 70 33 L 70 63 L 48 76 L 26 63 L 26 33 Z" fill="none" stroke="url(#aiAccentGrad)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+    
+    <!-- Inner Neural Pathways -->
+    <path d="M 48 20 L 48 48 M 70 33 L 48 48 M 26 33 L 48 48 M 70 63 L 48 48 M 26 63 L 48 48 M 48 76 L 48 48" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-opacity="0.6" />
+
+    <!-- Core Intelligence Nodes -->
+    <circle cx="48" cy="20" r="3.5" fill="#60a5fa" />
+    <circle cx="70" cy="33" r="3" fill="#3b82f6" />
+    <circle cx="70" cy="63" r="3" fill="#3b82f6" />
+    <circle cx="48" cy="76" r="3.5" fill="#60a5fa" />
+    <circle cx="26" cy="63" r="3" fill="#3b82f6" />
+    <circle cx="26" cy="33" r="3" fill="#3b82f6" />
+
+    <!-- Central Super-Core / Assistant Node -->
+    <circle cx="48" cy="48" r="7" fill="#ffffff" />
+    <circle cx="48" cy="48" r="11" fill="none" stroke="#93c5fd" stroke-width="1.5" stroke-opacity="0.8" />
+  </g>
+</svg>
