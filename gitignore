@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+
+# Next.js / Build Outputs
+.next/
+out/
+dist/
+build/
+
+# Environment and Secret Files
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.production
+.env.production.local
+!.env.example
+
+# Logs and Debug Output
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Test and Coverage Outputs
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor and IDE Files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Temporary Files and Caches
+tmp/
+temp/
+.cache/
+*.tmp
+
