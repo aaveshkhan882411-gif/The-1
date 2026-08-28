@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="GrowthAI Placeholder">
+  <defs>
+    <linearGradient id="phBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0F19" />
+      <stop offset="100%" stop-color="#06090F" />
+    </linearGradient>
+    <linearGradient id="phAccent" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#93C5FD" />
+    </linearGradient>
+    <radialGradient id="phGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background Base Container -->
+  <rect width="512" height="512" rx="36" fill="url(#phBg)" stroke="#1E293B" stroke-width="2" />
+
+  <!-- Ambient Glow -->
+  <circle cx="256" cy="256" r="180" fill="url(#phGlow)" />
+
+  <!-- Abstract Data / Image Placeholder Wireframe Motif -->
+  <g transform="translate(156, 176)">
+    <!-- Outer Placeholder Box -->
+    <rect width="200" height="160" rx="16" fill="none" stroke="#334155" stroke-width="2.5" stroke-dasharray="8 6" />
+
+    <!-- Mountain / Landscape Asset Symbol -->
+    <path d="M 30 115 L 80 65 L 125 100 L 145 80 L 170 115 Z" fill="none" stroke="url(#phAccent)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />
+
+    <!-- Sun / Data Node Symbol -->
+    <circle cx="135" cy="55" r="10" fill="#60A5FA" />
+  </g>
+
+  <!-- Central Brand Indicator -->
+  <text x="256" y="380" fill="#94A3B8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" letter-spacing="2" text-anchor="middle">GROWTHAI ASSET</text>
+</svg>
+
