@@ -11,7 +11,10 @@ export interface RegisteredAgent {
 }
 
 class AgentRegistry {
-  private readonly agents = new Map<string, RegisteredAgent>();
+  private readonly agents = new Map<
+    string,
+    RegisteredAgent
+  >();
 
   register(
     config: AgentConfig,
@@ -37,7 +40,9 @@ class AgentRegistry {
     return this.agents.has(agentId);
   }
 
-  get(agentId: string): RegisteredAgent | undefined {
+  get(
+    agentId: string,
+  ): RegisteredAgent | undefined {
     return this.agents.get(agentId);
   }
 
@@ -45,19 +50,27 @@ class AgentRegistry {
     return Array.from(this.agents.values());
   }
 
-  async execute<TInput = unknown, TOutput = unknown>(
+  async execute<
+    TInput = unknown,
+    TOutput = unknown,
+  >(
     agentId: string,
     context: AgentContext,
     input: TInput,
   ): Promise<AgentResult<TOutput>> {
-    const registeredAgent = this.agents.get(agentId);
+    const registeredAgent =
+      this.agents.get(agentId);
 
     if (!registeredAgent) {
-      throw new Error(`Agent "${agentId}" is not registered.`);
+      throw new Error(
+        `Agent "${agentId}" is not registered.`,
+      );
     }
 
     if (!registeredAgent.config.enabled) {
-      throw new Error(`Agent "${agentId}" is disabled.`);
+      throw new Error(
+        `Agent "${agentId}" is disabled.`,
+      );
     }
 
     return registeredAgent.handler(
