@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" role="img" aria-label="GrowthAI Background">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06090F" />
+      <stop offset="50%" stop-color="#0B0F19" />
+      <stop offset="100%" stop-color="#04060A" />
+    </linearGradient>
+
+    <!-- Radial Glow 1 (Top Center) -->
+    <radialGradient id="glowTop" cx="50%" cy="0%" r="60%">
+      <stop offset="0%" stop-color="#2563EB" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#2563EB" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Radial Glow 2 (Bottom Right) -->
+    <radialGradient id="glowBottom" cx="85%" cy="90%" r="50%">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.12" />
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Grid Pattern -->
+    <pattern id="gridPattern" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#1E293B" stroke-width="0.75" stroke-opacity="0.35" />
+    </pattern>
+
+    <!-- Dot Matrix Overlay Pattern -->
+    <pattern id="dotMatrix" width="30" height="30" patternUnits="userSpaceOnUse">
+      <circle cx="15" cy="15" r="1" fill="#60A5FA" fill-opacity="0.15" />
+    </pattern>
+  </defs>
+
+  <!-- Base Layer -->
+  <rect width="1440" height="900" fill="url(#bgGrad)" />
+
+  <!-- Ambient Lighting Overlays -->
+  <rect width="1440" height="900" fill="url(#glowTop)" />
+  <rect width="1440" height="900" fill="url(#glowBottom)" />
+
+  <!-- Geometric Grid Layer -->
+  <rect width="1440" height="900" fill="url(#gridPattern)" />
+  <rect width="1440" height="900" fill="url(#dotMatrix)" />
+
+  <!-- Abstract Network / Circuit Lines (Subtle AI Motif) -->
+  <g stroke="#3B82F6" stroke-opacity="0.2" stroke-width="1.2" fill="none" stroke-linecap="round">
+    <!-- Top Left Nodes -->
+    <path d="M 0 150 L 200 150 L 280 230 L 450 230" />
+    <path d="M 120 0 L 120 80 L 200 160" />
+    
+    <!-- Top Right Nodes -->
+    <path d="M 1440 200 L 1200 200 L 1120 120 L 950 120" />
+    <path d="M 1300 0 L 1300 100 L 1220 180" />
+
+    <!-- Bottom Left Nodes -->
+    <path d="M 0 750 L 180 750 L 260 670 L 400 670" />
+    <path d="M 80 900 L 80 800 L 160 720" />
+
+    <!-- Bottom Right Nodes -->
+    <path d="M 1440 700 L 1240 700 L 1160 780 L 980 780" />
+    <path d="M 1350 900 L 1350 780 L 1270 700" />
+  </g>
+
+  <!-- Connection Nodes (Glowing Points) -->
+  <g fill="#60A5FA" fill-opacity="0.4">
+    <circle cx="200" cy="150" r="3" />
+    <circle cx="280" cy="230" r="2.5" />
+    <circle cx="120" cy="80" r="2" />
+    <circle cx="1200" cy="200" r="3" />
+    <circle cx="1120" cy="120" r="2.5" />
+    <circle cx="180" cy="750" r="3" />
+    <circle cx="260" cy="670" r="2.5" />
+    <circle cx="1240" cy="700" r="3" />
+    <circle cx="1160" cy="780" r="2.5" />
+  </g>
+
+  <!-- Highlight Nodes -->
+  <g fill="#93C5FD">
+    <circle cx="280" cy="230" r="1.2" />
+    <circle cx="1120" cy="120" r="1.2" />
+    <circle cx="260" cy="670" r="1.2" />
+    <circle cx="1160" cy="780" r="1.2" />
+  </g>
+</svg>
+
