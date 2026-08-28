@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 64" width="200" height="64" role="img" aria-label="GrowthAI Enterprise Verified Badge">
+  <defs>
+    <linearGradient id="badgeBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#06090F" />
+    </linearGradient>
+    <linearGradient id="badgeBorder" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#93C5FD" />
+    </linearGradient>
+    <radialGradient id="badgeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Ambient Badge Glow -->
+  <rect x="2" y="2" width="196" height="60" rx="30" fill="url(#badgeGlow)" />
+
+  <!-- Outer Rounded Capsule Frame with Gradient Stroke -->
+  <rect x="2" y="2" width="196" height="60" rx="30" fill="url(#badgeBg)" stroke="url(#badgeBorder)" stroke-width="2" />
+
+  <!-- Inner Spark / AI Emblem Node -->
+  <g transform="translate(14, 14)">
+    <circle cx="18" cy="18" r="16" fill="#0B0F19" stroke="#1E293B" stroke-width="1.5" />
+    <!-- Mini Growth Vector Icon -->
+    <path d="M 10 23 L 15 17 L 20 20 L 26 11" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="26" cy="11" r="2.5" fill="#93C5FD" />
+  </g>
+
+  <!-- Badge Typography -->
+  <text x="56" y="27" fill="#94A3B8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="600" letter-spacing="1">POWERED BY</text>
+  <text x="56" y="46" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="700" letter-spacing="-0.3">Growth<tspan fill="#3B82F6">AI</tspan></text>
+</svg>
