@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="GrowthAI AI Workforce">
+  <defs>
+    <linearGradient id="bgBase" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0F19" />
+      <stop offset="100%" stop-color="#06090F" />
+    </linearGradient>
+    <linearGradient id="beamGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="50%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#93C5FD" />
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0" />
+    </radialGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="512" height="512" rx="36" fill="url(#bgBase)" stroke="#1E293B" stroke-width="2" />
+
+  <!-- Ambient Central Glow -->
+  <circle cx="256" cy="256" r="160" fill="url(#centerGlow)" />
+
+  <!-- Background Network Grid / Orbitals -->
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#1E293B" stroke-width="1.5" stroke-dasharray="6 6" />
+  <circle cx="256" cy="256" r="100" fill="none" stroke="#2563EB" stroke-width="1" stroke-opacity="0.2" />
+
+  <!-- Connection Beams Between Central Orchestrator and Agent Nodes -->
+  <g stroke="url(#beamGrad)" stroke-width="2" stroke-opacity="0.6" stroke-linecap="round">
+    <line x1="256" y1="256" x2="256" y2="120" />
+    <line x1="256" y1="256" x2="374" y2="188" />
+    <line x1="256" y1="256" x2="374" y2="324" />
+    <line x1="256" y1="256" x2="256" y2="392" />
+    <line x1="256" y1="256" x2="138" y2="324" />
+    <line x1="256" y1="256" x2="138" y2="188" />
+  </g>
+
+  <!-- Inter-Agent Collaborative Ring Links -->
+  <g stroke="#60A5FA" stroke-width="1" stroke-dasharray="4 4" stroke-opacity="0.4">
+    <line x1="256" y1="120" x2="374" y2="188" />
+    <line x1="374" y1="188" x2="374" y2="324" />
+    <line x1="374" y1="324" x2="256" y2="392" />
+    <line x1="256" y1="392" x2="138" y2="324" />
+    <line x1="138" y1="324" x2="138" y2="188" />
+    <line x1="138" y1="188" x2="256" y2="120" />
+  </g>
+
+  <!-- Central Master Orchestrator Node (AI CEO / Hub) -->
+  <g transform="translate(256, 256)">
+    <circle cx="0" cy="0" r="38" fill="#0B0F19" stroke="#3B82F6" stroke-width="3" filter="url(#glow)" />
+    <polygon points="0,-18 15,8 -15,8" fill="none" stroke="#60A5FA" stroke-width="2.5" stroke-linejoin="round" />
+    <circle cx="0" cy="0" r="8" fill="#FFFFFF" />
+    <circle cx="0" cy="0" r="24" fill="none" stroke="#93C5FD" stroke-width="1" stroke-opacity="0.5" />
+  </g>
+
+  <!-- Node 1: Top (AI Sales / Revenue Agent) -->
+  <g transform="translate(256, 120)">
+    <circle cx="0" cy="0" r="26" fill="#0B0F19" stroke="#3B82F6" stroke-width="2" />
+    <path d="M-8 6 L-2 -2 L4 2 L10 -8" fill="none" stroke="#60A5FA" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="10" cy="-8" r="3" fill="#FFFFFF" />
+  </g>
+
+  <!-- Node 2: Top-Right (AI Support & Receptionist) -->
+  <g transform="translate(374, 188)">
+    <circle cx="0" cy="0" r="26" fill="#0B0F19" stroke="#3B82F6" stroke-width="2" />
+    <path d="M-7 -4 C-7 -9 7 -9 7 -4 C7 2 -7 2 -7 8 L7 8" fill="none" stroke="#60A5FA" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="0" cy="13" r="2" fill="#FFFFFF" />
+  </g>
+
+  <!-- Node 3: Bottom-Right (AI Workflow & Automation) -->
+  <g transform="translate(374, 324)">
+    <circle cx="0" cy="0" r="26" fill="#0B0F19" stroke="#3B82F6" stroke-width="2" />
+    <rect x="-8" y="-8" width="6" height="6" rx="1" fill="#60A5FA" />
+    <rect x="2" y="2" width="6" height="6" rx="1" fill="#60A5FA" />
+    <path d="M-2 -5 L5 -5 C7 -5 7 -5 7 -2 L7 5" fill="none" stroke="#60A5FA" stroke-width="2" />
+  </g>
+
+  <!-- Node 4: Bottom (AI Analytics & Insights) -->
+  <g transform="translate(256, 392)">
+    <circle cx="0" cy="0" r="26" fill="#0B0F19" stroke="#3B82F6" stroke-width="2" />
+    <line x1="-8" y1="8" x2="-8" y2="2" stroke="#60A5FA" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="-2" y1="8" x2="-2" y2="-4" stroke="#60A5FA" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="4" y1="8" x2="4" y2="-8" stroke="#60A5FA" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="-10" y1="10" x2="10" y2="10" stroke="#93C5FD" stroke-width="2" stroke-linecap="round" />
+  </g>
+
+  <!-- Node 5: Bottom-Left (AI Communication / WhatsApp & Voice) -->
+  <g transform="translate(138, 324)">
+    <circle cx="0" cy="0" r="26" fill="#0B0F19" stroke="#3B82F6" stroke-width="2" />
+    <path d="M-8 -6 L8 -6 C10 -6 10 -4 10 -2 L10 4 C10 6 10 6 8 6 L-2 6 L-8 10 L-8 6 C-10 6 -10 6 -10 4 L-10 -2 C-10 -4 -10 -6 -8 -6 Z" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linejoin="round" />
+    <circle cx="-3" cy="0" r="1.5" fill="#FFFFFF" />
+    <circle cx="1" cy="0" r="1.5" fill="#FFFFFF" />
+    <circle cx="5" cy="0" r="1.5" fill="#FFFFFF" />
+  </g>
+
+  <!-- Node 6: Top-Left (AI CRM & Leads) -->
+  <g transform="translate(138, 188)">
+    <circle cx="0" cy="0" r="26" fill="#0B0F19" stroke="#3B82F6" stroke-width="2" />
+    <circle cx="-3" cy="-3" r="4" fill="#60A5FA" />
+    <path d="M-11 8 C-11 4 -7 3 -3 3" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" />
+    <path d="M3 2 L6 5 L12 -1" fill="none" stroke="#93C5FD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <!-- Outer Satellite Nodes (Sub-Agents / Micro-Workers) -->
+  <circle cx="256" cy="64" r="6" fill="#60A5FA" />
+  <circle cx="430" cy="256" r="6" fill="#3B82F6" />
+  <circle cx="82" cy="256" r="6" fill="#3B82F6" />
+  <circle cx="196" cy="154" r="4" fill="#93C5FD" />
+  <circle cx="316" cy="358" r="4" fill="#93C5FD" />
+</svg>
