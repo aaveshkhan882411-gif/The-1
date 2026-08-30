@@ -1,79 +1,192 @@
+/**
+ * @file security/auth.ts
+ * @description Server-only authentication identity validation for GrowthAI.
+ *
+ * SECURITY:
+ * - Never trusts client-provided authorization claims.
+ * - Authentication and authorization remain separate.
+ * - Tenant identity must come from the verified server-side session.
+ */
+
 import 'server-only';
 
-/**
- * @file security/audit.ts
- * @description Server-only security audit event definitions and helpers
- * for the GrowthAI SaaS platform.
- */
+import type { UserRole } from '../types/auth';
 
-export type SecurityAuditEvent =
-  | 'authentication_success'
-  | 'authentication_failure'
-  | 'authorization_denied'
-  | 'tenant_access_denied'
-  | 'csrf_failure'
-  | 'rate_limit_exceeded'
-  | 'validation_failure'
-  | 'security_policy_violation';
+const USER_ROLES = [
+  'owner',
+  'admin',
+  'manager',
+  'agent_manager',
+  'sales',
+  'support',
+  'analyst',
+  'member',
+  'viewer',
+] as const;
 
-export interface SecurityAuditContext {
-  readonly userId?: string;
-  readonly tenantId?: string;
-  readonly requestId?: string;
-  readonly ipAddress?: string;
-  readonly userAgent?: string;
-  readonly metadata?: Readonly<Record<string, string>>;
+function isUserRole(value: unknown): value is UserRole {
+  return (
+    typeof value === 'string' &&
+    (USER_ROLES as readonly string[]).includes(value)
+  );
 }
 
-export interface SecurityAuditEntry {
-  readonly event: SecurityAuditEvent;
-  readonly timestamp: string;
-  readonly context: SecurityAuditContext;
-}
-
-/**
- * Creates a normalized security audit entry.
- *
- * This function does not persist or transmit the event.
- * Persistence/logging is intentionally delegated to a later infrastructure layer.
- */
-export function createSecurityAuditEntry(
-  event: SecurityAuditEvent,
-  context: SecurityAuditContext = {}
-): SecurityAuditEntry {
-  if (!event) {
-    throw new Error('Security audit event is required.');
+function getNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
   }
 
-  return Object.freeze({
-    event,
-    timestamp: new Date().toISOString(),
-    context: Object.freeze({ ...context }),
-  });
+  const valueTrimmed = value.trim();
+
+  return valueTrimmed.length > 0 ? valueTrimmed : null;
+}
+
+export interface AuthenticatedUser {
+  readonly id: string;
+  readonly email: string;
+  readonly tenantId: string;
+  readonly role: UserRole;
+  readonly emailVerified: boolean;
+  readonly status: string;
+}
+
+export type AuthCheckResult =
+  | {
+      readonly isAuthenticated: true;
+      readonly user: AuthenticatedUser;
+    }
+  | {
+      readonly isAuthenticated: false;
+      readonly error: string;
+    };
+
+/**
+ * Validates a raw session user object.
+ */
+export function validateAuthenticatedUser(
+  rawUser: unknown,
+): AuthenticatedUser | null {
+  if (
+    rawUser === null ||
+    typeof rawUser !== 'object' ||
+    Array.isArray(rawUser)
+  ) {
+    return null;
+  }
+
+  const record = rawUser as Record<string, unknown>;
+
+  const id = getNonEmptyString(record.id);
+  const email = getNonEmptyString(record.email);
+  const tenantId = getNonEmptyString(record.tenantId);
+  const role = isUserRole(record.role) ? record.role : null;
+
+  if (!id || !email || !tenantId || !role) {
+    return null;
+  }
+
+  const emailVerified =
+    typeof record.emailVerified === 'boolean'
+      ? record.emailVerified
+      : false;
+
+  const status =
+    getNonEmptyString(record.status) ?? 'active';
+
+  const normalizedStatus = status.toLowerCase();
+
+  if (
+    normalizedStatus === 'suspended' ||
+    normalizedStatus === 'deactivated' ||
+    normalizedStatus === 'disabled' ||
+    normalizedStatus === 'banned'
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    email: email.toLowerCase(),
+    tenantId,
+    role,
+    emailVerified,
+    status: normalizedStatus,
+  };
 }
 
 /**
- * Validates whether an unknown value is a supported security audit event.
+ * Verifies that the authenticated user belongs to a target tenant.
  */
-export function isSecurityAuditEvent(
-  value: unknown
-): value is SecurityAuditEvent {
-  if (typeof value !== 'string') {
+export function verifyTenantAccess(
+  user: AuthenticatedUser | null | undefined,
+  targetTenantId: string | null | undefined,
+): boolean {
+  if (!user || typeof user.tenantId !== 'string') {
     return false;
   }
 
-  switch (value) {
-    case 'authentication_success':
-    case 'authentication_failure':
-    case 'authorization_denied':
-    case 'tenant_access_denied':
-    case 'csrf_failure':
-    case 'rate_limit_exceeded':
-    case 'validation_failure':
-    case 'security_policy_violation':
-      return true;
-
-    default:
-      return false;
+  if (typeof targetTenantId !== 'string') {
+    return false;
   }
+
+  const userTenantId = user.tenantId.trim();
+  const requestedTenantId = targetTenantId.trim();
+
+  if (!userTenantId || !requestedTenantId) {
+    return false;
+  }
+
+  return userTenantId === requestedTenantId;
+}
+
+/**
+ * Resolves an already-established server-side session.
+ */
+export function resolveServerSession(
+  rawSessionData: unknown,
+): AuthCheckResult {
+  if (
+    rawSessionData === null ||
+    typeof rawSessionData !== 'object' ||
+    Array.isArray(rawSessionData)
+  ) {
+    return {
+      isAuthenticated: false,
+      error: 'No active session found.',
+    };
+  }
+
+  const sessionRecord =
+    rawSessionData as Record<string, unknown>;
+
+  const candidateUser =
+    sessionRecord.user ?? sessionRecord;
+
+  const user =
+    validateAuthenticatedUser(candidateUser);
+
+  if (!user) {
+    return {
+      isAuthenticated: false,
+      error: 'Invalid or expired session identity.',
+    };
+  }
+
+  return {
+    isAuthenticated: true,
+    user,
+  };
+}
+
+/**
+ * Convenience check for tenant owner/admin.
+ */
+export function isTenantAdminOrOwner(
+  user: AuthenticatedUser | null | undefined,
+): boolean {
+  return (
+    user !== null &&
+    user !== undefined &&
+    (user.role === 'owner' || user.role === 'admin')
+  );
 }
