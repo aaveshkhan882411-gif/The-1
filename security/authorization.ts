@@ -1,18 +1,12 @@
 /**
  * @file security/authorization.ts
- * @description Production-ready, server-only authorization and access-control module
- * for the GrowthAI SaaS platform.
- *
- * SECURITY NOTICE:
- * - This module is SERVER-ONLY.
- * - Authorization decisions rely only on verified AuthenticatedUser contexts.
- * - Permission definitions remain centralized in config/permissions.ts.
- * - Tenant isolation must be enforced before tenant-scoped operations.
+ * @description Server-only authorization and access-control utilities.
  */
 
 import 'server-only';
 
-import type { AuthenticatedUser } from '../security/auth';
+import type { AuthenticatedUser } from './auth';
+
 import {
   hasPermission,
   hasAnyPermission,
@@ -20,32 +14,44 @@ import {
   type Permission,
 } from '../config/permissions';
 
-/**
- * Standard authorization check result.
- */
 export type AuthorizationResult =
-  | { readonly authorized: true }
-  | { readonly authorized: false; readonly reason: string };
+  | {
+      readonly authorized: true;
+    }
+  | {
+      readonly authorized: false;
+      readonly reason: string;
+    };
 
 function hasValidUserContext(
-  user: AuthenticatedUser | null | undefined
+  user: AuthenticatedUser | null | undefined,
 ): user is AuthenticatedUser {
-  return Boolean(
-    user &&
-      typeof user.id === 'string' &&
-      user.id.trim() &&
-      typeof user.tenantId === 'string' &&
-      user.tenantId.trim() &&
-      user.role
+  if (!user) {
+    return false;
+  }
+
+  return (
+    typeof user.id === 'string' &&
+    user.id.trim().length > 0 &&
+    typeof user.tenantId === 'string' &&
+    user.tenantId.trim().length > 0 &&
+    typeof user.role === 'string' &&
+    user.role.trim().length > 0
   );
 }
 
-/**
- * Checks whether a verified authenticated user has a specific permission.
- */
+function isValidPermission(
+  permission: unknown,
+): permission is Permission {
+  return (
+    typeof permission === 'string' &&
+    permission.trim().length > 0
+  );
+}
+
 export function authorizePermission(
   user: AuthenticatedUser | null | undefined,
-  permission: Permission
+  permission: Permission,
 ): AuthorizationResult {
   if (!hasValidUserContext(user)) {
     return {
@@ -54,10 +60,10 @@ export function authorizePermission(
     };
   }
 
-  if (typeof permission !== 'string' || permission.length === 0) {
+  if (!isValidPermission(permission)) {
     return {
       authorized: false,
-      reason: 'Access denied: Invalid permission queried.',
+      reason: 'Access denied: Invalid permission.',
     };
   }
 
@@ -68,16 +74,14 @@ export function authorizePermission(
     };
   }
 
-  return { authorized: true };
+  return {
+    authorized: true,
+  };
 }
 
-/**
- * Checks whether a verified authenticated user has at least one
- * of the requested permissions.
- */
 export function authorizeAnyPermission(
   user: AuthenticatedUser | null | undefined,
-  permissions: readonly Permission[]
+  permissions: readonly Permission[],
 ): AuthorizationResult {
   if (!hasValidUserContext(user)) {
     return {
@@ -86,30 +90,46 @@ export function authorizeAnyPermission(
     };
   }
 
-  if (!Array.isArray(permissions) || permissions.length === 0) {
+  if (
+    !Array.isArray(permissions) ||
+    permissions.length === 0
+  ) {
     return {
       authorized: false,
-      reason: 'Access denied: No permissions specified for check.',
+      reason: 'Access denied: No permissions specified.',
     };
   }
 
-  if (!hasAnyPermission(user.role, [...permissions])) {
+  const validPermissions =
+    permissions.filter(isValidPermission);
+
+  if (validPermissions.length === 0) {
+    return {
+      authorized: false,
+      reason: 'Access denied: Invalid permissions.',
+    };
+  }
+
+  if (
+    !hasAnyPermission(
+      user.role,
+      [...validPermissions],
+    )
+  ) {
     return {
       authorized: false,
       reason: 'Access denied: Insufficient permissions.',
     };
   }
 
-  return { authorized: true };
+  return {
+    authorized: true,
+  };
 }
 
-/**
- * Checks whether a verified authenticated user has all
- * of the requested permissions.
- */
 export function authorizeAllPermissions(
   user: AuthenticatedUser | null | undefined,
-  permissions: readonly Permission[]
+  permissions: readonly Permission[],
 ): AuthorizationResult {
   if (!hasValidUserContext(user)) {
     return {
@@ -118,32 +138,48 @@ export function authorizeAllPermissions(
     };
   }
 
-  if (!Array.isArray(permissions) || permissions.length === 0) {
+  if (
+    !Array.isArray(permissions) ||
+    permissions.length === 0
+  ) {
     return {
       authorized: false,
-      reason: 'Access denied: No permissions specified for check.',
+      reason: 'Access denied: No permissions specified.',
     };
   }
 
-  if (!hasAllPermissions(user.role, [...permissions])) {
+  const validPermissions =
+    permissions.filter(isValidPermission);
+
+  if (
+    validPermissions.length !== permissions.length
+  ) {
+    return {
+      authorized: false,
+      reason: 'Access denied: Invalid permissions.',
+    };
+  }
+
+  if (
+    !hasAllPermissions(
+      user.role,
+      [...validPermissions],
+    )
+  ) {
     return {
       authorized: false,
       reason: 'Access denied: Missing one or more required permissions.',
     };
   }
 
-  return { authorized: true };
+  return {
+    authorized: true,
+  };
 }
 
-/**
- * Verifies tenant isolation.
- *
- * The requested tenant must exactly match the tenant attached to
- * the already-verified authenticated user.
- */
 export function authorizeTenantAccess(
   user: AuthenticatedUser | null | undefined,
-  targetTenantId: string | null | undefined
+  targetTenantId: string | null | undefined,
 ): AuthorizationResult {
   if (!hasValidUserContext(user)) {
     return {
@@ -155,30 +191,34 @@ export function authorizeTenantAccess(
   if (typeof targetTenantId !== 'string') {
     return {
       authorized: false,
-      reason: 'Access denied: Invalid target tenant identifier.',
+      reason: 'Access denied: Invalid tenant identifier.',
     };
   }
 
-  const normalizedTargetTenantId = targetTenantId.trim();
+  const requestedTenantId =
+    targetTenantId.trim();
 
-  if (
-    !normalizedTargetTenantId ||
-    user.tenantId !== normalizedTargetTenantId
-  ) {
+  if (!requestedTenantId) {
+    return {
+      authorized: false,
+      reason: 'Access denied: Empty tenant identifier.',
+    };
+  }
+
+  if (user.tenantId !== requestedTenantId) {
     return {
       authorized: false,
       reason: 'Access denied: Cross-tenant data access violation.',
     };
   }
 
-  return { authorized: true };
+  return {
+    authorized: true,
+  };
 }
 
-/**
- * Checks whether the verified user is an owner or tenant administrator.
- */
 export function authorizeAdminOrOwner(
-  user: AuthenticatedUser | null | undefined
+  user: AuthenticatedUser | null | undefined,
 ): AuthorizationResult {
   if (!hasValidUserContext(user)) {
     return {
@@ -187,7 +227,10 @@ export function authorizeAdminOrOwner(
     };
   }
 
-  if (user.role !== 'owner' && user.role !== 'admin') {
+  if (
+    user.role !== 'owner' &&
+    user.role !== 'admin'
+  ) {
     return {
       authorized: false,
       reason:
@@ -195,73 +238,73 @@ export function authorizeAdminOrOwner(
     };
   }
 
-  return { authorized: true };
+  return {
+    authorized: true,
+  };
 }
 
-/**
- * Enforces a single permission check.
- * Throws when authorization fails.
- */
 export function requirePermission(
   user: AuthenticatedUser | null | undefined,
-  permission: Permission
+  permission: Permission,
 ): void {
-  const result = authorizePermission(user, permission);
+  const result =
+    authorizePermission(user, permission);
 
   if (!result.authorized) {
     throw new Error(result.reason);
   }
 }
 
-/**
- * Enforces an ANY-permission check.
- */
 export function requireAnyPermission(
   user: AuthenticatedUser | null | undefined,
-  permissions: readonly Permission[]
+  permissions: readonly Permission[],
 ): void {
-  const result = authorizeAnyPermission(user, permissions);
+  const result =
+    authorizeAnyPermission(
+      user,
+      permissions,
+    );
 
   if (!result.authorized) {
     throw new Error(result.reason);
   }
 }
 
-/**
- * Enforces an ALL-permissions check.
- */
 export function requireAllPermissions(
   user: AuthenticatedUser | null | undefined,
-  permissions: readonly Permission[]
+  permissions: readonly Permission[],
 ): void {
-  const result = authorizeAllPermissions(user, permissions);
+  const result =
+    authorizeAllPermissions(
+      user,
+      permissions,
+    );
 
   if (!result.authorized) {
     throw new Error(result.reason);
   }
 }
 
-/**
- * Enforces tenant isolation.
- */
 export function requireTenantAccess(
   user: AuthenticatedUser | null | undefined,
-  targetTenantId: string | null | undefined
+  targetTenantId: string | null | undefined,
 ): void {
-  const result = authorizeTenantAccess(user, targetTenantId);
+  const result =
+    authorizeTenantAccess(
+      user,
+      targetTenantId,
+    );
 
   if (!result.authorized) {
     throw new Error(result.reason);
   }
 }
 
-/**
- * Enforces owner/admin privileges.
- */
 export function requireAdminOrOwner(
-  user: AuthenticatedUser | null | undefined
+  user: AuthenticatedUser | null | undefined,
 ): void {
-  const result = authorizeAdminOrOwner(user);
+  const result =
+    authorizeAdminOrOwner(user);
 
   if (!result.authorized) {
     throw new Error(result.reason);
