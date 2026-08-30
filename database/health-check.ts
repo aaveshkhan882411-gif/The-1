@@ -1,12 +1,6 @@
 /**
  * @file database/health-check.ts
  * @description PostgreSQL database health and connectivity checks.
- *
- * IMPORTANT:
- * - Self-hosted PostgreSQL only.
- * - No Supabase dependency.
- * - Server-side only.
- * - Uses the application's DatabaseAdapter.
  */
 
 import 'server-only';
@@ -21,11 +15,7 @@ export interface DatabaseHealth {
 }
 
 /**
- * Checks whether the self-hosted PostgreSQL database is reachable.
- *
- * The connection adapter is intentionally closed after the health check.
- * This keeps the health-check function lifecycle-safe with the current
- * database connection abstraction.
+ * Checks whether self-hosted PostgreSQL is reachable.
  */
 export async function checkDatabaseHealth(): Promise<DatabaseHealth> {
   const startedAt = Date.now();
@@ -34,9 +24,21 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealth> {
     const db = createDatabaseConnection();
 
     try {
-      await db.query<{ ok: number }>(
+      const result = await db.query<{ ok: number }>(
         'SELECT 1 AS ok',
       );
+
+      const ok = result.rows[0]?.ok === 1;
+
+      if (!ok) {
+        return {
+          healthy: false,
+          latencyMs: Date.now() - startedAt,
+          checkedAt: new Date().toISOString(),
+          error:
+            'PostgreSQL health query returned an unexpected result.',
+        };
+      }
 
       return {
         healthy: true,
@@ -54,7 +56,7 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealth> {
       error:
         error instanceof Error
           ? error.message
-          : 'Unknown database connection error',
+          : 'Unknown PostgreSQL connection error.',
     };
   }
 }
