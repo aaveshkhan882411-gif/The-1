@@ -2,8 +2,12 @@
  * @file database/types.ts
  * @description Provider-independent database contracts for GrowthAI.
  *
- * The application depends on these contracts, not on a specific
- * database provider. PostgreSQL is the primary relational target.
+ * PostgreSQL is the primary relational database target.
+ *
+ * IMPORTANT:
+ * - DatabaseRecord represents the common minimum identity/audit fields.
+ * - Not every table has an updated_at column.
+ * - Tables that support updates may extend UpdatedDatabaseRecord.
  */
 
 export type Json =
@@ -16,20 +20,37 @@ export type Json =
 
 export type UUID = string;
 
+/**
+ * Minimum common database record contract.
+ *
+ * Every persisted record must have:
+ * - id
+ * - created_at
+ *
+ * updated_at is intentionally NOT required here because
+ * immutable records such as audit_logs do not have it.
+ */
 export interface DatabaseRecord {
-  id: UUID;
-  created_at: string;
-  updated_at: string;
+  readonly id: UUID;
+  readonly created_at: string;
+}
+
+/**
+ * Record contract for tables that support modification timestamps.
+ */
+export interface UpdatedDatabaseRecord
+  extends DatabaseRecord {
+  readonly updated_at: string;
 }
 
 export interface QueryOptions {
-  limit?: number;
-  offset?: number;
+  readonly limit?: number;
+  readonly offset?: number;
 }
 
 export interface QueryResult<T> {
-  rows: T[];
-  count?: number;
+  readonly rows: T[];
+  readonly count?: number;
 }
 
 export interface DatabaseAdapter {
@@ -44,7 +65,9 @@ export interface DatabaseAdapter {
   ): Promise<{ affectedRows: number }>;
 
   transaction<T>(
-    callback: (tx: DatabaseAdapter) => Promise<T>,
+    callback: (
+      tx: DatabaseAdapter,
+    ) => Promise<T>,
   ): Promise<T>;
 
   close(): Promise<void>;
