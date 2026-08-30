@@ -1,62 +1,42 @@
 /**
  * @file database/server.ts
- * @description Production-ready server-side Supabase client for GrowthAI SaaS platform using @supabase/ssr and Next.js 14 App Router (Strict TypeScript, zero `any`).
+ * @description Server-only PostgreSQL database access for GrowthAI.
+ *
+ * IMPORTANT:
+ * - Supabase removed.
+ * - No browser database access.
+ * - Uses self-hosted PostgreSQL through DATABASE_URL.
  */
 
 import 'server-only';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { createDatabaseConnection } from './connection';
+import type { DatabaseAdapter } from './types';
 
-if (!supabaseUrl) {
-  throw new Error('Missing environment variable: NEXT_PUBLIC_SUPABASE_URL');
-}
-
-if (!supabaseAnonKey) {
-  throw new Error('Missing environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY');
-}
-
-interface CookieOptions {
-  domain?: string;
-  expires?: Date;
-  httpOnly?: boolean;
-  maxAge?: number;
-  path?: string;
-  sameSite?: 'lax' | 'strict' | 'none';
-  secure?: boolean;
-  priority?: 'low' | 'medium' | 'high';
+/**
+ * Creates a server-side PostgreSQL database adapter.
+ *
+ * Use this from:
+ * - Server Components
+ * - Route Handlers
+ * - Server Actions
+ * - server-only services
+ */
+export function createServerDatabase(): DatabaseAdapter {
+  return createDatabaseConnection();
 }
 
 /**
- * Creates and returns a server-side Supabase client bound to Next.js 14 cookies.
- * Safe for use in Server Actions, Server Components, and Route Handlers.
+ * Compatibility alias for code that previously imported createClient()
+ * from database/server.ts.
  */
-export function createClient() {
-  const cookieStore = cookies();
-
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options: CookieOptions) {
-        try {
-          cookieStore.set({ name, value, ...options });
-        } catch (error) {
-          // The `set` method was called from a Server Component.
-          // This can be ignored if middleware is refreshing sessions.
-        }
-      },
-      remove(name: string, options: CookieOptions) {
-        try {
-          cookieStore.set({ name, value: '', ...options, maxAge: 0 });
-        } catch (error) {
-          // The `remove` method was called from a Server Component.
-          // This can be ignored if middleware is refreshing sessions.
-        }
-      },
-    },
-  });
+export function createClient(): DatabaseAdapter {
+  return createServerDatabase();
 }
+
+/**
+ * Shared server database instance.
+ *
+ * The underlying PostgreSQL pool is reused by the connection layer.
+ */
+export const db = createServerDatabase();
