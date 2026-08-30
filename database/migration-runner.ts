@@ -2,8 +2,8 @@
  * @file database/migration-runner.ts
  * @description Self-hosted PostgreSQL migration runner for GrowthAI.
  *
- * Runs SQL migration files in deterministic order and records
- * successfully applied migrations in the database.
+ * Runs numbered SQL migrations in deterministic order and records
+ * successfully applied migrations.
  */
 
 import 'server-only';
@@ -19,7 +19,8 @@ const MIGRATIONS_DIRECTORY = path.join(
   'migrations',
 );
 
-const MIGRATION_FILE_PATTERN = /^\d+_[a-z0-9_-]+\.sql$/;
+const MIGRATION_FILE_PATTERN =
+  /^\d+_[a-z0-9_-]+\.sql$/;
 
 interface MigrationFile {
   readonly version: string;
@@ -27,27 +28,39 @@ interface MigrationFile {
   readonly sql: string;
 }
 
-/**
- * Loads migration files from database/migrations.
- */
-async function loadMigrations(): Promise<MigrationFile[]> {
-  const filenames = await fs.readdir(MIGRATIONS_DIRECTORY);
+async function loadMigrations(): Promise<
+  readonly MigrationFile[]
+> {
+  const filenames = await fs.readdir(
+    MIGRATIONS_DIRECTORY,
+  );
 
   const migrationFiles = filenames
-    .filter((filename) => MIGRATION_FILE_PATTERN.test(filename))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    .filter((filename) =>
+      MIGRATION_FILE_PATTERN.test(filename),
+    )
+    .sort((a, b) =>
+      a.localeCompare(b, undefined, {
+        numeric: true,
+      }),
+    );
 
   const migrations: MigrationFile[] = [];
 
   for (const filename of migrationFiles) {
-    const filePath = path.join(MIGRATIONS_DIRECTORY, filename);
-    const sql = await fs.readFile(filePath, 'utf8');
+    const filePath = path.join(
+      MIGRATIONS_DIRECTORY,
+      filename,
+    );
 
-    const version = filename.replace(/\.sql$/, '');
+    const sql = await fs.readFile(
+      filePath,
+      'utf8',
+    );
 
     migrations.push({
-      version,
       filename,
+      version: filename.replace(/\.sql$/, ''),
       sql,
     });
   }
@@ -55,43 +68,33 @@ async function loadMigrations(): Promise<MigrationFile[]> {
   return migrations;
 }
 
-/**
- * Ensures the migration tracking table exists.
- */
-async function ensureMigrationTable(): Promise<void> {
-  const db = createDatabaseConnection();
-
+async function ensureMigrationTable(
+  db: ReturnType<typeof createDatabaseConnection>,
+): Promise<void> {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version TEXT PRIMARY KEY,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
-
-  await db.close();
 }
 
-/**
- * Returns migration versions that have already been applied.
- */
-async function getAppliedMigrations(): Promise<Set<string>> {
-  const db = createDatabaseConnection();
+async function getAppliedMigrations(
+  db: ReturnType<typeof createDatabaseConnection>,
+): Promise<ReadonlySet<string>> {
+  const result = await db.query<{ version: string }>(`
+    SELECT version
+    FROM schema_migrations
+    ORDER BY version ASC
+  `);
 
-  const result = await db.query<{ version: string }>(
-    `
-      SELECT version
-      FROM schema_migrations
-      ORDER BY version ASC
-    `,
+  return new Set(
+    result.rows.map((row) => row.version),
   );
-
-  await db.close();
-
-  return new Set(result.rows.map((row) => row.version));
 }
 
 /**
- * Executes all pending migrations in deterministic order.
+ * Runs all pending migrations.
  */
 export async function runMigrations(): Promise<void> {
   const migrations = await loadMigrations();
@@ -100,41 +103,87 @@ export async function runMigrations(): Promise<void> {
     return;
   }
 
-  await ensureMigrationTable();
+  const db = createDatabaseConnection();
 
-  const appliedMigrations = await getAppliedMigrations();
+  try {
+    await ensureMigrationTable(db);
 
-  for (const migration of migrations) {
-    if (appliedMigrations.has(migration.version)) {
-      continue;
-    }
+    const appliedMigrations =
+      await getAppliedMigrations(db);
 
-    const db = createDatabaseConnection();
+    for (const migration of migrations) {
+      if (
+        appliedMigrations.has(
+          migration.version,
+        )
+      ) {
+        continue;
+      }
 
-    try {
-      await db.transaction(async (transaction) => {
-        await transaction.execute(migration.sql);
+      await db.transaction(async (tx) => {
+        await tx.execute(migration.sql);
 
-        await transaction.execute(
+        await tx.execute(
           `
-            INSERT INTO schema_migrations (version)
-            VALUES ($1)
+            INSERT INTO schema_migrations (
+              version,
+              applied_at
+            )
+            VALUES ($1, NOW())
             ON CONFLICT (version) DO NOTHING
           `,
           [migration.version],
         );
       });
-    } finally {
-      await db.close();
     }
+  } finally {
+    await db.close();
   }
 }
 
 /**
- * Returns the list of migration files available in the project.
+ * Returns all migration filenames in execution order.
  */
-export async function listMigrations(): Promise<readonly string[]> {
+export async function listMigrations(): Promise<
+  readonly string[]
+> {
   const migrations = await loadMigrations();
 
-  return migrations.map((migration) => migration.filename);
+  return migrations.map(
+    (migration) => migration.filename,
+  );
+}
+
+/**
+ * Returns migrations that are present in the project
+ * but have not yet been applied to PostgreSQL.
+ */
+export async function getPendingMigrations(): Promise<
+  readonly string[]
+> {
+  const migrations = await loadMigrations();
+
+  if (migrations.length === 0) {
+    return [];
+  }
+
+  const db = createDatabaseConnection();
+
+  try {
+    await ensureMigrationTable(db);
+
+    const applied =
+      await getAppliedMigrations(db);
+
+    return migrations
+      .filter(
+        (migration) =>
+          !applied.has(migration.version),
+      )
+      .map(
+        (migration) => migration.filename,
+      );
+  } finally {
+    await db.close();
+  }
 }
