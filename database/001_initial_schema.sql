@@ -1,12 +1,15 @@
 -- ============================================================
 -- GrowthAI — Migration 001
 -- Path: database/migrations/001_initial_schema.sql
--- Purpose: Initial self-hosted PostgreSQL schema
+-- Purpose: Initial self-hosted PostgreSQL database schema
 -- ============================================================
 
 BEGIN;
 
--- PostgreSQL UUID generation
+-- ============================================================
+-- PostgreSQL UUID support
+-- ============================================================
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ============================================================
@@ -19,7 +22,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 
 -- ============================================================
--- Tenants
+-- 1. Tenants / Organizations
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS tenants (
@@ -36,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_tenants_status
     ON tenants(status);
 
 -- ============================================================
--- Users
+-- 2. Users
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS users (
@@ -59,8 +62,11 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_tenant_id
     ON users(tenant_id);
 
+CREATE INDEX IF NOT EXISTS idx_users_email
+    ON users(email);
+
 -- ============================================================
--- Agents
+-- 3. AI Agents
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS agents (
@@ -77,11 +83,14 @@ CREATE TABLE IF NOT EXISTS agents (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_agents_tenant_id
+    ON agents(tenant_id);
+
 CREATE INDEX IF NOT EXISTS idx_agents_tenant_status
     ON agents(tenant_id, status);
 
 -- ============================================================
--- Leads
+-- 4. Leads
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS leads (
@@ -111,6 +120,9 @@ CREATE TABLE IF NOT EXISTS leads (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_leads_tenant_id
+    ON leads(tenant_id);
+
 CREATE INDEX IF NOT EXISTS idx_leads_tenant_status
     ON leads(tenant_id, status);
 
@@ -121,7 +133,7 @@ CREATE INDEX IF NOT EXISTS idx_leads_email
     ON leads(email);
 
 -- ============================================================
--- Conversations
+-- 5. Conversations
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -140,6 +152,9 @@ CREATE TABLE IF NOT EXISTS conversations (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_conversations_tenant_id
+    ON conversations(tenant_id);
+
 CREATE INDEX IF NOT EXISTS idx_conversations_tenant_status
     ON conversations(tenant_id, status);
 
@@ -150,7 +165,7 @@ CREATE INDEX IF NOT EXISTS idx_conversations_agent
     ON conversations(agent_id);
 
 -- ============================================================
--- Appointments
+-- 6. Appointments
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS appointments (
@@ -182,11 +197,14 @@ CREATE TABLE IF NOT EXISTS appointments (
         CHECK (ends_at > starts_at)
 );
 
-CREATE INDEX IF NOT EXISTS idx_appointments_tenant_schedule
+CREATE INDEX IF NOT EXISTS idx_appointments_tenant_id
+    ON appointments(tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_appointments_schedule
     ON appointments(tenant_id, starts_at);
 
 -- ============================================================
--- CRM
+-- 7. CRM Records
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS crm_records (
@@ -205,14 +223,17 @@ CREATE TABLE IF NOT EXISTS crm_records (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_crm_tenant_stage
-    ON crm_records(tenant_id, stage);
+CREATE INDEX IF NOT EXISTS idx_crm_tenant_id
+    ON crm_records(tenant_id);
 
 CREATE INDEX IF NOT EXISTS idx_crm_lead
     ON crm_records(lead_id);
 
+CREATE INDEX IF NOT EXISTS idx_crm_stage
+    ON crm_records(tenant_id, stage);
+
 -- ============================================================
--- Integrations
+-- 8. Integrations
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS integrations (
@@ -234,7 +255,7 @@ CREATE INDEX IF NOT EXISTS idx_integrations_tenant
     ON integrations(tenant_id);
 
 -- ============================================================
--- Notifications
+-- 9. Notifications
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -258,7 +279,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_tenant
     ON notifications(tenant_id, created_at DESC);
 
 -- ============================================================
--- Audit logs
+-- 10. Audit Logs
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -281,7 +302,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_resource
     ON audit_logs(resource_type, resource_id);
 
 -- ============================================================
--- Updated-at trigger
+-- Updated-at trigger function
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION set_updated_at()
@@ -294,60 +315,68 @@ BEGIN
 END;
 $$;
 
+-- ============================================================
+-- Updated-at triggers
+-- ============================================================
+
 DROP TRIGGER IF EXISTS tenants_set_updated_at ON tenants;
+
 CREATE TRIGGER tenants_set_updated_at
 BEFORE UPDATE ON tenants
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS users_set_updated_at ON users;
+
 CREATE TRIGGER users_set_updated_at
 BEFORE UPDATE ON users
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS agents_set_updated_at ON agents;
+
 CREATE TRIGGER agents_set_updated_at
 BEFORE UPDATE ON agents
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS leads_set_updated_at ON leads;
+
 CREATE TRIGGER leads_set_updated_at
 BEFORE UPDATE ON leads
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS conversations_set_updated_at ON conversations;
+
 CREATE TRIGGER conversations_set_updated_at
 BEFORE UPDATE ON conversations
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS appointments_set_updated_at ON appointments;
+
 CREATE TRIGGER appointments_set_updated_at
 BEFORE UPDATE ON appointments
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS crm_records_set_updated_at ON crm_records;
+
 CREATE TRIGGER crm_records_set_updated_at
 BEFORE UPDATE ON crm_records
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS integrations_set_updated_at ON integrations;
-CREATE TRIGGER integrations_set_updated_at
-BEFORE UPDATE ON integrations;
 
--- Correct trigger creation for integrations.
-DROP TRIGGER IF EXISTS integrations_set_updated_at ON integrations;
 CREATE TRIGGER integrations_set_updated_at
 BEFORE UPDATE ON integrations
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
 DROP TRIGGER IF EXISTS notifications_set_updated_at ON notifications;
+
 CREATE TRIGGER notifications_set_updated_at
 BEFORE UPDATE ON notifications
 FOR EACH ROW
