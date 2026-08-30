@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import "../styles/globals.css";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "GrowthAI — AI Workforce for Your Business",
