@@ -2,222 +2,277 @@
  * @file database/migration-runner.ts
  * @description Server-only PostgreSQL migration runner for GrowthAI.
  *
- * IMPORTANT:
- * - PostgreSQL only.
- * - Uses the existing database/connection.ts adapter.
- * - Runs migrations inside a transaction.
+ * Responsibilities:
+ * - Discovers numbered SQL migrations.
+ * - Executes migrations in ascending version order.
+ * - Supports migration files that manage their own BEGIN/COMMIT.
  * - Records successfully applied migrations.
- * - Safe to run repeatedly; already-applied migrations are skipped.
+ * - Prevents duplicate migration versions.
+ *
+ * PostgreSQL only.
+ * Supabase is not required.
  */
 
 import 'server-only';
 
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
+
 import { createDatabaseConnection } from './connection';
-import type { DatabaseAdapter } from './types';
 
-export interface Migration {
-  readonly id: string;
-  readonly sql: string;
+const MIGRATIONS_DIRECTORY = path.join(
+  process.cwd(),
+  'database',
+  'migrations',
+);
+
+const MIGRATION_FILE_REGEX = /^(\d+)_.*\.sql$/;
+
+interface MigrationFile {
+  readonly version: number;
+  readonly filename: string;
+  readonly filepath: string;
 }
 
-export interface MigrationResult {
-  readonly applied: readonly string[];
-  readonly skipped: readonly string[];
-}
+function parseMigrationVersion(
+  filename: string,
+): number | null {
+  const match = filename.match(
+    MIGRATION_FILE_REGEX,
+  );
 
-const MIGRATION_TABLE = '__growthai_migrations';
+  if (!match) {
+    return null;
+  }
 
-function validateMigration(migration: Migration): void {
+  const version = Number.parseInt(
+    match[1],
+    10,
+  );
+
   if (
-    !migration ||
-    typeof migration.id !== 'string' ||
-    !migration.id.trim()
+    !Number.isSafeInteger(version) ||
+    version <= 0
   ) {
-    throw new Error(
-      'Invalid migration: migration id is required.',
-    );
+    return null;
   }
 
-  if (
-    typeof migration.sql !== 'string' ||
-    !migration.sql.trim()
-  ) {
-    throw new Error(
-      `Invalid migration "${migration.id}": SQL is required.`,
-    );
-  }
+  return version;
 }
 
-function normalizeMigrations(
-  migrations: readonly Migration[],
-): Migration[] {
-  if (!Array.isArray(migrations)) {
-    throw new Error('Migrations must be an array.');
-  }
+async function getMigrationFiles(): Promise<
+  MigrationFile[]
+> {
+  const filenames = await readdir(
+    MIGRATIONS_DIRECTORY,
+  );
 
-  const normalized = migrations.map((migration) => {
-    validateMigration(migration);
+  const migrations: MigrationFile[] = [];
 
-    return {
-      id: migration.id.trim(),
-      sql: migration.sql.trim(),
-    };
-  });
+  for (const filename of filenames) {
+    const version =
+      parseMigrationVersion(filename);
 
-  const ids = new Set<string>();
-
-  for (const migration of normalized) {
-    if (ids.has(migration.id)) {
-      throw new Error(
-        `Duplicate migration id: ${migration.id}`,
-      );
+    if (version === null) {
+      continue;
     }
 
-    ids.add(migration.id);
+    migrations.push({
+      version,
+      filename,
+      filepath: path.join(
+        MIGRATIONS_DIRECTORY,
+        filename,
+      ),
+    });
   }
 
-  return normalized;
+  migrations.sort(
+    (a, b) => a.version - b.version,
+  );
+
+  for (
+    let index = 1;
+    index < migrations.length;
+    index += 1
+  ) {
+    const previous =
+      migrations[index - 1];
+
+    const current =
+      migrations[index];
+
+    if (
+      previous.version ===
+      current.version
+    ) {
+      throw new Error(
+        `Duplicate migration version detected: ${current.version}`,
+      );
+    }
+  }
+
+  return migrations;
 }
 
-async function ensureMigrationTable(
-  db: DatabaseAdapter,
-): Promise<void> {
+async function ensureMigrationTable(): Promise<void> {
+  const db = createDatabaseConnection();
+
   await db.execute(`
-    CREATE TABLE IF NOT EXISTS ${MIGRATION_TABLE} (
-      id VARCHAR(255) PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version INTEGER PRIMARY KEY,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 }
 
-async function getAppliedMigrationIds(
-  db: DatabaseAdapter,
-): Promise<Set<string>> {
-  const result = await db.query<{ id: string }>(`
-    SELECT id
-    FROM ${MIGRATION_TABLE}
-    ORDER BY id ASC
-  `);
-
-  return new Set(result.rows.map((row) => row.id));
-}
-
-/**
- * Runs the supplied migrations in order.
- *
- * Every migration is applied inside the same PostgreSQL transaction.
- * If any migration fails, the transaction is rolled back.
- */
-export async function runMigrations(
-  migrations: readonly Migration[],
-): Promise<MigrationResult> {
-  const normalizedMigrations =
-    normalizeMigrations(migrations);
-
-  if (normalizedMigrations.length === 0) {
-    return {
-      applied: [],
-      skipped: [],
-    };
-  }
-
-  const db = createDatabaseConnection();
-
-  return db.transaction(async (tx) => {
-    await ensureMigrationTable(tx);
-
-    const appliedIds =
-      await getAppliedMigrationIds(tx);
-
-    const applied: string[] = [];
-    const skipped: string[] = [];
-
-    for (const migration of normalizedMigrations) {
-      if (appliedIds.has(migration.id)) {
-        skipped.push(migration.id);
-        continue;
-      }
-
-      await tx.execute(migration.sql);
-
-      await tx.execute(
-        `
-          INSERT INTO ${MIGRATION_TABLE} (id)
-          VALUES ($1)
-        `,
-        [migration.id],
-      );
-
-      applied.push(migration.id);
-    }
-
-    return {
-      applied,
-      skipped,
-    };
-  });
-}
-
-/**
- * Runs a single migration.
- */
-export async function runMigration(
-  migration: Migration,
-): Promise<MigrationResult> {
-  return runMigrations([migration]);
-}
-
-/**
- * Checks whether a migration has already been applied.
- */
-export async function isMigrationApplied(
-  migrationId: string,
-): Promise<boolean> {
-  if (
-    typeof migrationId !== 'string' ||
-    !migrationId.trim()
-  ) {
-    throw new Error(
-      'Migration id is required.',
-    );
-  }
-
-  const db = createDatabaseConnection();
-
-  return db.transaction(async (tx) => {
-    await ensureMigrationTable(tx);
-
-    const result = await tx.query<{ id: string }>(
-      `
-        SELECT id
-        FROM ${MIGRATION_TABLE}
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [migrationId.trim()],
-    );
-
-    return result.rows.length > 0;
-  });
-}
-
-/**
- * Returns all successfully applied migration IDs.
- */
-export async function getAppliedMigrations(): Promise<
-  readonly string[]
+async function getAppliedVersions(): Promise<
+  Set<number>
 > {
   const db = createDatabaseConnection();
 
-  return db.transaction(async (tx) => {
-    await ensureMigrationTable(tx);
+  const result = await db.query<{
+    version: number | string;
+  }>(`
+    SELECT version
+    FROM schema_migrations
+    ORDER BY version ASC
+  `);
 
-    const result = await tx.query<{ id: string }>(`
-      SELECT id
-      FROM ${MIGRATION_TABLE}
-      ORDER BY id ASC
-    `);
+  return new Set(
+    result.rows.map((row) =>
+      Number(row.version),
+    ),
+  );
+}
 
-    return result.rows.map((row) => row.id);
-  });
+/**
+ * Executes all pending migrations.
+ *
+ * IMPORTANT:
+ * The runner deliberately does NOT wrap the SQL
+ * migration in another transaction.
+ *
+ * This allows each migration file to contain:
+ *
+ * BEGIN;
+ * ...
+ * COMMIT;
+ *
+ * without creating an invalid nested transaction.
+ */
+export async function runMigrations(): Promise<void> {
+  const migrations =
+    await getMigrationFiles();
+
+  if (migrations.length === 0) {
+    throw new Error(
+      'No database migration files were found.',
+    );
+  }
+
+  await ensureMigrationTable();
+
+  const appliedVersions =
+    await getAppliedVersions();
+
+  const db = createDatabaseConnection();
+
+  for (const migration of migrations) {
+    if (
+      appliedVersions.has(
+        migration.version,
+      )
+    ) {
+      continue;
+    }
+
+    const sql = await readFile(
+      migration.filepath,
+      'utf8',
+    );
+
+    const trimmedSql = sql.trim();
+
+    if (!trimmedSql) {
+      throw new Error(
+        `Migration file is empty: ${migration.filename}`,
+      );
+    }
+
+    /*
+     * Execute the migration exactly as authored.
+     *
+     * If the SQL file contains BEGIN/COMMIT,
+     * PostgreSQL handles its transaction.
+     */
+    await db.execute(trimmedSql);
+
+    /*
+     * Only record the migration after its SQL
+     * has completed successfully.
+     */
+    await db.execute(
+      `
+        INSERT INTO schema_migrations (
+          version,
+          applied_at
+        )
+        VALUES ($1, NOW())
+        ON CONFLICT (version) DO NOTHING
+      `,
+      [migration.version],
+    );
+
+    console.log(
+      `[database] Applied migration ${migration.version}: ${migration.filename}`,
+    );
+  }
+}
+
+/**
+ * Returns the latest successfully applied migration.
+ */
+export async function getCurrentMigrationVersion(): Promise<number> {
+  await ensureMigrationTable();
+
+  const db = createDatabaseConnection();
+
+  const result = await db.query<{
+    version: number | string;
+  }>(`
+    SELECT version
+    FROM schema_migrations
+    ORDER BY version DESC
+    LIMIT 1
+  `);
+
+  if (result.rows.length === 0) {
+    return 0;
+  }
+
+  return Number(
+    result.rows[0].version,
+  );
+}
+
+/**
+ * Checks whether every available migration
+ * has been applied.
+ */
+export async function isDatabaseUpToDate(): Promise<boolean> {
+  await ensureMigrationTable();
+
+  const migrations =
+    await getMigrationFiles();
+
+  const appliedVersions =
+    await getAppliedVersions();
+
+  return migrations.every(
+    (migration) =>
+      appliedVersions.has(
+        migration.version,
+      ),
+  );
 }
