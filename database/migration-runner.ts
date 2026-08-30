@@ -1,189 +1,223 @@
 /**
  * @file database/migration-runner.ts
- * @description Self-hosted PostgreSQL migration runner for GrowthAI.
+ * @description Server-only PostgreSQL migration runner for GrowthAI.
  *
- * Runs numbered SQL migrations in deterministic order and records
- * successfully applied migrations.
+ * IMPORTANT:
+ * - PostgreSQL only.
+ * - Uses the existing database/connection.ts adapter.
+ * - Runs migrations inside a transaction.
+ * - Records successfully applied migrations.
+ * - Safe to run repeatedly; already-applied migrations are skipped.
  */
 
 import 'server-only';
 
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-
 import { createDatabaseConnection } from './connection';
+import type { DatabaseAdapter } from './types';
 
-const MIGRATIONS_DIRECTORY = path.join(
-  process.cwd(),
-  'database',
-  'migrations',
-);
-
-const MIGRATION_FILE_PATTERN =
-  /^\d+_[a-z0-9_-]+\.sql$/;
-
-interface MigrationFile {
-  readonly version: string;
-  readonly filename: string;
+export interface Migration {
+  readonly id: string;
   readonly sql: string;
 }
 
-async function loadMigrations(): Promise<
-  readonly MigrationFile[]
-> {
-  const filenames = await fs.readdir(
-    MIGRATIONS_DIRECTORY,
-  );
+export interface MigrationResult {
+  readonly applied: readonly string[];
+  readonly skipped: readonly string[];
+}
 
-  const migrationFiles = filenames
-    .filter((filename) =>
-      MIGRATION_FILE_PATTERN.test(filename),
-    )
-    .sort((a, b) =>
-      a.localeCompare(b, undefined, {
-        numeric: true,
-      }),
+const MIGRATION_TABLE = '__growthai_migrations';
+
+function validateMigration(migration: Migration): void {
+  if (
+    !migration ||
+    typeof migration.id !== 'string' ||
+    !migration.id.trim()
+  ) {
+    throw new Error(
+      'Invalid migration: migration id is required.',
     );
-
-  const migrations: MigrationFile[] = [];
-
-  for (const filename of migrationFiles) {
-    const filePath = path.join(
-      MIGRATIONS_DIRECTORY,
-      filename,
-    );
-
-    const sql = await fs.readFile(
-      filePath,
-      'utf8',
-    );
-
-    migrations.push({
-      filename,
-      version: filename.replace(/\.sql$/, ''),
-      sql,
-    });
   }
 
-  return migrations;
+  if (
+    typeof migration.sql !== 'string' ||
+    !migration.sql.trim()
+  ) {
+    throw new Error(
+      `Invalid migration "${migration.id}": SQL is required.`,
+    );
+  }
+}
+
+function normalizeMigrations(
+  migrations: readonly Migration[],
+): Migration[] {
+  if (!Array.isArray(migrations)) {
+    throw new Error('Migrations must be an array.');
+  }
+
+  const normalized = migrations.map((migration) => {
+    validateMigration(migration);
+
+    return {
+      id: migration.id.trim(),
+      sql: migration.sql.trim(),
+    };
+  });
+
+  const ids = new Set<string>();
+
+  for (const migration of normalized) {
+    if (ids.has(migration.id)) {
+      throw new Error(
+        `Duplicate migration id: ${migration.id}`,
+      );
+    }
+
+    ids.add(migration.id);
+  }
+
+  return normalized;
 }
 
 async function ensureMigrationTable(
-  db: ReturnType<typeof createDatabaseConnection>,
+  db: DatabaseAdapter,
 ): Promise<void> {
   await db.execute(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version TEXT PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS ${MIGRATION_TABLE} (
+      id VARCHAR(255) PRIMARY KEY,
       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    )
   `);
 }
 
-async function getAppliedMigrations(
-  db: ReturnType<typeof createDatabaseConnection>,
-): Promise<ReadonlySet<string>> {
-  const result = await db.query<{ version: string }>(`
-    SELECT version
-    FROM schema_migrations
-    ORDER BY version ASC
+async function getAppliedMigrationIds(
+  db: DatabaseAdapter,
+): Promise<Set<string>> {
+  const result = await db.query<{ id: string }>(`
+    SELECT id
+    FROM ${MIGRATION_TABLE}
+    ORDER BY id ASC
   `);
 
-  return new Set(
-    result.rows.map((row) => row.version),
-  );
+  return new Set(result.rows.map((row) => row.id));
 }
 
 /**
- * Runs all pending migrations.
+ * Runs the supplied migrations in order.
+ *
+ * Every migration is applied inside the same PostgreSQL transaction.
+ * If any migration fails, the transaction is rolled back.
  */
-export async function runMigrations(): Promise<void> {
-  const migrations = await loadMigrations();
+export async function runMigrations(
+  migrations: readonly Migration[],
+): Promise<MigrationResult> {
+  const normalizedMigrations =
+    normalizeMigrations(migrations);
 
-  if (migrations.length === 0) {
-    return;
+  if (normalizedMigrations.length === 0) {
+    return {
+      applied: [],
+      skipped: [],
+    };
   }
 
   const db = createDatabaseConnection();
 
-  try {
-    await ensureMigrationTable(db);
+  return db.transaction(async (tx) => {
+    await ensureMigrationTable(tx);
 
-    const appliedMigrations =
-      await getAppliedMigrations(db);
+    const appliedIds =
+      await getAppliedMigrationIds(tx);
 
-    for (const migration of migrations) {
-      if (
-        appliedMigrations.has(
-          migration.version,
-        )
-      ) {
+    const applied: string[] = [];
+    const skipped: string[] = [];
+
+    for (const migration of normalizedMigrations) {
+      if (appliedIds.has(migration.id)) {
+        skipped.push(migration.id);
         continue;
       }
 
-      await db.transaction(async (tx) => {
-        await tx.execute(migration.sql);
+      await tx.execute(migration.sql);
 
-        await tx.execute(
-          `
-            INSERT INTO schema_migrations (
-              version,
-              applied_at
-            )
-            VALUES ($1, NOW())
-            ON CONFLICT (version) DO NOTHING
-          `,
-          [migration.version],
-        );
-      });
+      await tx.execute(
+        `
+          INSERT INTO ${MIGRATION_TABLE} (id)
+          VALUES ($1)
+        `,
+        [migration.id],
+      );
+
+      applied.push(migration.id);
     }
-  } finally {
-    await db.close();
-  }
+
+    return {
+      applied,
+      skipped,
+    };
+  });
 }
 
 /**
- * Returns all migration filenames in execution order.
+ * Runs a single migration.
  */
-export async function listMigrations(): Promise<
-  readonly string[]
-> {
-  const migrations = await loadMigrations();
-
-  return migrations.map(
-    (migration) => migration.filename,
-  );
+export async function runMigration(
+  migration: Migration,
+): Promise<MigrationResult> {
+  return runMigrations([migration]);
 }
 
 /**
- * Returns migrations that are present in the project
- * but have not yet been applied to PostgreSQL.
+ * Checks whether a migration has already been applied.
  */
-export async function getPendingMigrations(): Promise<
-  readonly string[]
-> {
-  const migrations = await loadMigrations();
-
-  if (migrations.length === 0) {
-    return [];
+export async function isMigrationApplied(
+  migrationId: string,
+): Promise<boolean> {
+  if (
+    typeof migrationId !== 'string' ||
+    !migrationId.trim()
+  ) {
+    throw new Error(
+      'Migration id is required.',
+    );
   }
 
   const db = createDatabaseConnection();
 
-  try {
-    await ensureMigrationTable(db);
+  return db.transaction(async (tx) => {
+    await ensureMigrationTable(tx);
 
-    const applied =
-      await getAppliedMigrations(db);
+    const result = await tx.query<{ id: string }>(
+      `
+        SELECT id
+        FROM ${MIGRATION_TABLE}
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [migrationId.trim()],
+    );
 
-    return migrations
-      .filter(
-        (migration) =>
-          !applied.has(migration.version),
-      )
-      .map(
-        (migration) => migration.filename,
-      );
-  } finally {
-    await db.close();
-  }
+    return result.rows.length > 0;
+  });
+}
+
+/**
+ * Returns all successfully applied migration IDs.
+ */
+export async function getAppliedMigrations(): Promise<
+  readonly string[]
+> {
+  const db = createDatabaseConnection();
+
+  return db.transaction(async (tx) => {
+    await ensureMigrationTable(tx);
+
+    const result = await tx.query<{ id: string }>(`
+      SELECT id
+      FROM ${MIGRATION_TABLE}
+      ORDER BY id ASC
+    `);
+
+    return result.rows.map((row) => row.id);
+  });
 }
