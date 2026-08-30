@@ -1,114 +1,129 @@
 /**
  * @file security/tenant.ts
- * @description Production-ready, server-only tenant isolation and scoping module
- * for the GrowthAI SaaS platform.
- *
- * SECURITY NOTICE:
- * - This module is SERVER-ONLY.
- * - Tenant identity must come only from a verified AuthenticatedUser.
- * - Client-supplied tenant identifiers must never be trusted directly.
+ * @description Server-only tenant isolation and scoping utilities.
  */
 
 import 'server-only';
 
-import type { AuthenticatedUser } from '../security/auth';
+import type { AuthenticatedUser } from './auth';
 
-/**
- * Represents a trusted server-side tenant execution context.
- */
 export interface TenantContext {
   readonly tenantId: string;
   readonly userId: string;
   readonly role: AuthenticatedUser['role'];
 }
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const TENANT_SLUG_REGEX =
+  /^[a-zA-Z0-9_-]{1,128}$/;
+
 /**
- * Validates a tenant identifier.
- *
- * Tenant IDs are restricted to a safe, predictable character set
- * and bounded length.
+ * Validates UUID or safe internal tenant identifiers.
  */
 export function isValidTenantId(
-  tenantId: unknown
+  tenantId: unknown,
 ): tenantId is string {
   if (typeof tenantId !== 'string') {
     return false;
   }
 
-  const normalizedTenantId = tenantId.trim();
+  const normalized =
+    tenantId.trim();
+
+  if (!normalized || normalized.length > 128) {
+    return false;
+  }
 
   return (
-    normalizedTenantId.length > 0 &&
-    normalizedTenantId.length <= 128 &&
-    /^[a-zA-Z0-9_-]+$/.test(normalizedTenantId)
+    UUID_REGEX.test(normalized) ||
+    TENANT_SLUG_REGEX.test(normalized)
   );
 }
 
 /**
- * Extracts the trusted tenant ID from a verified authenticated user.
+ * Gets the trusted tenant ID from an authenticated user.
  */
 export function getTenantIdFromUser(
-  user: AuthenticatedUser | null | undefined
+  user: AuthenticatedUser | null | undefined,
 ): string | null {
-  if (!user || typeof user.tenantId !== 'string') {
+  if (
+    !user ||
+    typeof user.tenantId !== 'string'
+  ) {
     return null;
   }
 
-  const tenantId = user.tenantId.trim();
+  const tenantId =
+    user.tenantId.trim();
 
-  return isValidTenantId(tenantId) ? tenantId : null;
+  return isValidTenantId(tenantId)
+    ? tenantId
+    : null;
 }
 
 /**
- * Verifies that the authenticated user belongs to the target tenant.
+ * Verifies tenant ownership.
  */
 export function verifyTenantOwnership(
   user: AuthenticatedUser | null | undefined,
-  targetTenantId: unknown
+  targetTenantId: unknown,
 ): boolean {
-  const verifiedTenantId = getTenantIdFromUser(user);
+  const verifiedTenantId =
+    getTenantIdFromUser(user);
 
-  if (!verifiedTenantId || !isValidTenantId(targetTenantId)) {
+  if (
+    !verifiedTenantId ||
+    !isValidTenantId(targetTenantId)
+  ) {
     return false;
   }
 
-  return verifiedTenantId === targetTenantId.trim();
+  return (
+    verifiedTenantId ===
+    targetTenantId.trim()
+  );
 }
 
 /**
- * Enforces tenant ownership/access.
- *
- * Throws when the tenant context is invalid or a cross-tenant
- * access attempt is detected.
+ * Enforces tenant ownership.
  */
 export function assertTenantOwnership(
   user: AuthenticatedUser | null | undefined,
-  targetTenantId: unknown
+  targetTenantId: unknown,
 ): void {
-  if (!verifyTenantOwnership(user, targetTenantId)) {
+  if (
+    !verifyTenantOwnership(
+      user,
+      targetTenantId,
+    )
+  ) {
     throw new Error(
-      'Access denied: Tenant isolation violation or invalid tenant context.'
+      'Access denied: Tenant isolation violation or invalid tenant context.',
     );
   }
 }
 
 /**
- * Creates a trusted server-side TenantContext from a verified user.
+ * Creates a trusted tenant execution context.
  */
 export function createTenantContext(
-  user: AuthenticatedUser | null | undefined
+  user: AuthenticatedUser | null | undefined,
 ): TenantContext {
-  const tenantId = getTenantIdFromUser(user);
+  const tenantId =
+    getTenantIdFromUser(user);
 
   if (
     !user ||
     !tenantId ||
     typeof user.id !== 'string' ||
     !user.id.trim() ||
-    !user.role
+    typeof user.role !== 'string' ||
+    !user.role.trim()
   ) {
     throw new Error(
-      'Failed to create tenant context: Unauthenticated or malformed session.'
+      'Failed to create tenant context: Unauthenticated or malformed session.',
     );
   }
 
