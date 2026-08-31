@@ -1,15 +1,19 @@
 /**
  * @file security/rate-limit.ts
- * @description Production-ready, server-only rate-limiting utility for GrowthAI.
+ * @description Production-ready, server-only distributed rate limiter
+ * for GrowthAI using Upstash Redis.
  *
- * ARCHITECTURAL NOTICE:
- * - This implementation uses process-local in-memory storage.
- * - It is NOT a distributed/global limiter across multiple serverless instances.
- * - A future Redis/database adapter can replace the storage layer without
- *   changing the security architecture.
+ * IMPORTANT:
+ * - Works across serverless instances.
+ * - Uses Redis/Upstash instead of process-local memory.
+ * - Uses a sliding-window algorithm.
+ * - Fails closed when the Redis configuration is missing or invalid.
  */
 
 import 'server-only';
+
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
 export interface RateLimitConfig {
   readonly windowMs: number;
@@ -25,11 +29,6 @@ export interface RateLimitResult {
   readonly retryAfterSeconds: number;
 }
 
-interface RateLimitRecord {
-  count: number;
-  resetTimeMs: number;
-}
-
 export interface CheckRateLimitOptions {
   readonly cost?: number;
 }
@@ -37,35 +36,47 @@ export interface CheckRateLimitOptions {
 export interface RateLimiter {
   check(
     clientKey: unknown,
-    options?: CheckRateLimitOptions
-  ): RateLimitResult;
-  reset(clientKey: unknown): boolean;
-  cleanup(): void;
+    options?: CheckRateLimitOptions,
+  ): Promise<RateLimitResult>;
+
+  reset(clientKey: unknown): Promise<boolean>;
 }
 
-type RateLimitStore = Map<string, RateLimitRecord>;
-
-function normalizeConfig(config: RateLimitConfig): Required<RateLimitConfig> {
-  if (!Number.isFinite(config.windowMs) || config.windowMs <= 0) {
-    throw new Error('Rate limit windowMs must be a positive number.');
+function normalizeConfig(
+  config: RateLimitConfig,
+): Required<RateLimitConfig> {
+  if (
+    !Number.isSafeInteger(config.windowMs) ||
+    config.windowMs <= 0
+  ) {
+    throw new Error(
+      'Rate limit windowMs must be a positive safe integer.',
+    );
   }
 
-  if (!Number.isFinite(config.maxRequests) || config.maxRequests <= 0) {
-    throw new Error('Rate limit maxRequests must be a positive number.');
+  if (
+    !Number.isSafeInteger(config.maxRequests) ||
+    config.maxRequests <= 0
+  ) {
+    throw new Error(
+      'Rate limit maxRequests must be a positive safe integer.',
+    );
   }
 
   return {
-    windowMs: Math.max(1, Math.floor(config.windowMs)),
-    maxRequests: Math.max(1, Math.floor(config.maxRequests)),
-    prefix: typeof config.prefix === 'string' && config.prefix.trim()
-      ? `${config.prefix.trim()}:`
-      : '',
+    windowMs: config.windowMs,
+    maxRequests: config.maxRequests,
+    prefix:
+      typeof config.prefix === 'string' &&
+      config.prefix.trim().length > 0
+        ? `${config.prefix.trim()}:`
+        : '',
   };
 }
 
 function normalizeClientKey(
   clientKey: unknown,
-  prefix: string
+  prefix: string,
 ): string | null {
   if (typeof clientKey !== 'string') {
     return null;
@@ -73,17 +84,22 @@ function normalizeClientKey(
 
   const normalized = clientKey.trim();
 
-  if (!normalized || normalized.length > 512) {
+  if (
+    normalized.length === 0 ||
+    normalized.length > 512
+  ) {
     return null;
   }
 
   return `${prefix}${normalized}`;
 }
 
-function normalizeCost(cost: number | undefined): number {
+function normalizeCost(
+  cost: number | undefined,
+): number {
   if (
     cost === undefined ||
-    !Number.isInteger(cost) ||
+    !Number.isSafeInteger(cost) ||
     cost <= 0
   ) {
     return 1;
@@ -92,146 +108,190 @@ function normalizeCost(cost: number | undefined): number {
   return cost;
 }
 
-/**
- * Creates an isolated in-memory rate limiter.
- *
- * The returned limiter owns its own persistent store.
- * Creating a limiter once and reusing it is required for request counts
- * to persist across checks.
- */
-export function createRateLimiter(
-  config: RateLimitConfig
-): RateLimiter {
-  const normalizedConfig = normalizeConfig(config);
-  const store: RateLimitStore = new Map();
+function getRedis(): Redis {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL?.trim();
 
-  function cleanup(): void {
-    const now = Date.now();
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
 
-    for (const [key, record] of store.entries()) {
-      if (now >= record.resetTimeMs) {
-        store.delete(key);
-      }
-    }
+  if (!url || !token) {
+    throw new Error(
+      'Missing Upstash Redis configuration: ' +
+        'UPSTASH_REDIS_REST_URL and ' +
+        'UPSTASH_REDIS_REST_TOKEN are required.',
+    );
   }
 
-  function check(
-    clientKey: unknown,
-    options?: CheckRateLimitOptions
-  ): RateLimitResult {
-    const now = Date.now();
-    const normalizedKey = normalizeClientKey(
-      clientKey,
-      normalizedConfig.prefix
-    );
+  return new Redis({
+    url,
+    token,
+  });
+}
 
-    if (!normalizedKey) {
-      return {
-        allowed: false,
-        limit: normalizedConfig.maxRequests,
-        remaining: 0,
-        resetTimeMs: now + normalizedConfig.windowMs,
-        retryAfterSeconds: Math.ceil(
-          normalizedConfig.windowMs / 1000
-        ),
-      };
-    }
+function millisecondsToDuration(
+  milliseconds: number,
+): `${number} ms` {
+  return `${Math.max(
+    1,
+    Math.floor(milliseconds),
+  )} ms`;
+}
 
-    const cost = normalizeCost(options?.cost);
+/**
+ * Creates a distributed Upstash rate limiter.
+ */
+export function createRateLimiter(
+  config: RateLimitConfig,
+): RateLimiter {
+  const normalizedConfig =
+    normalizeConfig(config);
 
-    let record = store.get(normalizedKey);
+  const redis = getRedis();
 
-    if (!record || now >= record.resetTimeMs) {
-      record = {
-        count: 0,
-        resetTimeMs: now + normalizedConfig.windowMs,
-      };
+  const limiter = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(
+      normalizedConfig.maxRequests,
+      millisecondsToDuration(
+        normalizedConfig.windowMs,
+      ),
+    ),
+    prefix:
+      normalizedConfig.prefix ||
+      '@growthai/ratelimit',
+    analytics: false,
+  });
 
-      store.set(normalizedKey, record);
-    }
+  return {
+    async check(
+      clientKey: unknown,
+      options?: CheckRateLimitOptions,
+    ): Promise<RateLimitResult> {
+      const normalizedKey =
+        normalizeClientKey(
+          clientKey,
+          normalizedConfig.prefix,
+        );
 
-    if (record.count + cost > normalizedConfig.maxRequests) {
-      const retryAfterMs = Math.max(
-        0,
-        record.resetTimeMs - now
+      const now = Date.now();
+
+      if (!normalizedKey) {
+        return {
+          allowed: false,
+          limit: normalizedConfig.maxRequests,
+          remaining: 0,
+          resetTimeMs:
+            now + normalizedConfig.windowMs,
+          retryAfterSeconds: Math.ceil(
+            normalizedConfig.windowMs / 1000,
+          ),
+        };
+      }
+
+      const cost = normalizeCost(
+        options?.cost,
       );
 
+      /*
+       * Upstash's standard limiter consumes one unit
+       * per call. For weighted requests, execute the
+       * required number of checks.
+       */
+      let result = await limiter.limit(
+        normalizedKey,
+      );
+
+      for (
+        let index = 1;
+        index < cost;
+        index += 1
+      ) {
+        if (!result.success) {
+          break;
+        }
+
+        result = await limiter.limit(
+          normalizedKey,
+        );
+      }
+
+      const resetTimeMs =
+        typeof result.reset === 'number'
+          ? result.reset
+          : now + normalizedConfig.windowMs;
+
+      const retryAfterSeconds =
+        result.success
+          ? 0
+          : Math.max(
+              1,
+              Math.ceil(
+                (resetTimeMs - now) / 1000,
+              ),
+            );
+
       return {
-        allowed: false,
+        allowed: result.success,
         limit: normalizedConfig.maxRequests,
         remaining: Math.max(
           0,
-          normalizedConfig.maxRequests - record.count
+          result.remaining,
         ),
-        resetTimeMs: record.resetTimeMs,
-        retryAfterSeconds: Math.ceil(
-          retryAfterMs / 1000
-        ),
+        resetTimeMs,
+        retryAfterSeconds,
       };
-    }
+    },
 
-    record.count += cost;
+    async reset(
+      clientKey: unknown,
+    ): Promise<boolean> {
+      const normalizedKey =
+        normalizeClientKey(
+          clientKey,
+          normalizedConfig.prefix,
+        );
 
-    const remaining = Math.max(
-      0,
-      normalizedConfig.maxRequests - record.count
-    );
+      if (!normalizedKey) {
+        return false;
+      }
 
-    return {
-      allowed: true,
-      limit: normalizedConfig.maxRequests,
-      remaining,
-      resetTimeMs: record.resetTimeMs,
-      retryAfterSeconds: 0,
-    };
-  }
-
-  function reset(clientKey: unknown): boolean {
-    const normalizedKey = normalizeClientKey(
-      clientKey,
-      normalizedConfig.prefix
-    );
-
-    if (!normalizedKey) {
+      /*
+       * The Upstash Ratelimit abstraction intentionally
+       * does not expose a generic reset operation.
+       *
+       * Returning false avoids pretending that a reset
+       * happened when it did not.
+       */
       return false;
-    }
-
-    return store.delete(normalizedKey);
-  }
-
-  return {
-    check,
-    reset,
-    cleanup,
+    },
   };
 }
 
 /**
- * Shared default limiter.
+ * Shared application limiter.
  *
- * IMPORTANT:
- * This instance is created once and reused so request counts persist
- * during the lifetime of the current server process.
+ * 100 requests per minute per client key.
  */
-const defaultLimiter = createRateLimiter({
-  windowMs: 60 * 1000,
-  maxRequests: 100,
-  prefix: 'global',
-});
+const defaultLimiter =
+  createRateLimiter({
+    windowMs: 60 * 1000,
+    maxRequests: 100,
+    prefix: 'growthai:global',
+  });
 
-export function checkRateLimit(
+export async function checkRateLimit(
   clientKey: string,
-  options?: CheckRateLimitOptions
-): RateLimitResult {
-  return defaultLimiter.check(clientKey, options);
+  options?: CheckRateLimitOptions,
+): Promise<RateLimitResult> {
+  return defaultLimiter.check(
+    clientKey,
+    options,
+  );
 }
 
-export function resetRateLimit(
-  clientKey: string
-): boolean {
+export async function resetRateLimit(
+  clientKey: string,
+): Promise<boolean> {
   return defaultLimiter.reset(clientKey);
-}
-
-export function cleanupRateLimit(): void {
-  defaultLimiter.cleanup();
 }
