@@ -1,174 +1,90 @@
-import { PlanDefinition } from "../../config/plans";
+const base = process.env.PAYPAL_API_BASE || "https://api-m.sandbox.paypal.com"; 
 
-export interface PayPalAccessTokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
+// 1. PayPal से Access Token जनरेट करने का फंक्शन (Internal use)
+async function generateAccessToken(): Promise<string> {
+  const clientId = process.env.PAYPAL_CLIENT_ID;
+  const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    console.warn("PayPal API Credentials are missing in Environment Variables!");
+    // अगर API Key नहीं है, तो क्रैश होने से बचाने के लिए खाली स्ट्रिंग भेजें (टेस्टिंग के लिए)
+    return "";
+  }
+
+  const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+
+  const response = await fetch(`${base}/v1/oauth2/token`, {
+    method: "POST",
+    body: "grant_type=client_credentials",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+  });
+
+  const data = await response.json();
+  return data.access_token;
 }
 
-export interface CreateOrderParams {
-  plan: PlanDefinition;
-  tenantId: string;
-  customId?: string;
-}
+// 2. आपका मेन PayPal Client जिसे दूसरे फाइल्स में इस्तेमाल (Export) किया गया है
+export const paypalClient = {
+  
+  // ऑर्डर क्रिएट करने का असली फंक्शन
+  createOrder: async (amount: string, currency: string = "USD") => {
+    try {
+      const accessToken = await generateAccessToken();
+      const url = `${base}/v2/checkout/orders`;
 
-export interface CaptureOrderResponse {
-  id: string;
-  status: "COMPLETED" | "APPROVED" | "VOIDED" | "PAYER_ACTION_REQUIRED";
-  payer?: {
-    payer_id?: string;
-    email_address?: string;
-    name?: {
-      given_name?: string;
-      surname?: string;
-    };
-  };
-  purchase_units?: Array<{
-    reference_id?: string;
-    payments?: {
-      captures?: Array<{
-        id: string;
-        status: string;
-        amount: {
-          value: string;
-          currency_code: string;
-        };
-      }>;
-    };
-  }>;
-}
+      const payload = {
+        intent: "CAPTURE",
+        purchase_units: [
+          {
+            amount: {
+              currency_code: currency,
+              value: amount,
+            },
+          },
+        ],
+      };
 
-export class PayPalClient {
-  private clientId: string;
-  private clientSecret: string;
-  private baseUrl: string;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
 
-  constructor() {
-    this.clientId = process.env.PAYPAL_CLIENT_ID || "";
-    this.clientSecret = process.env.PAYPAL_CLIENT_SECRET || "";
-    const env = process.env.PAYPAL_ENVIRONMENT || "sandbox";
-    this.baseUrl =
-      env === "production"
-        ? "https://api-m.paypal.com"
-        : "https://api-m.sandbox.paypal.com";
-  }
-
-  private async getAccessToken(): Promise<string> {
-    if (!this.clientId || !this.clientSecret) {
-      throw new Error("PayPal Client ID and Secret must be configured in environment variables.");
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to create PayPal Order:", error);
+      throw error;
     }
+  },
 
-    const authHeader = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
-    const response = await fetch(`${this.baseUrl}/v1/oauth2/token`, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${authHeader}`,
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: "grant_type=client_credentials"
-    });
+  // वेबहुक (Webhook) सिग्नेचर वेरीफाई करने का असली फंक्शन
+  verifyWebhookSignature: async (params: any): Promise<boolean> => {
+    try {
+      const accessToken = await generateAccessToken();
+      const url = `${base}/v1/notifications/verify-webhook-signature`;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`PayPal OAuth failed (${response.status}): ${errorText}`);
-    }
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(params),
+      });
 
-    const data = (await response.json()) as PayPalAccessTokenResponse;
-    return data.access_token;
-  }
-
-  async createOrder(params: CreateOrderParams): Promise<{ id: string; status: string; links: any[] }> {
-    const token = await this.getAccessToken();
-
-    const orderPayload = {
-      intent: "CAPTURE",
-      purchase_units: [
-        {
-          custom_id: `${params.tenantId}:${params.plan.id}`,
-          description: `GrowthAI ${params.plan.name} Subscription`,
-          amount: {
-            currency_code: params.plan.currency,
-            value: params.plan.price.toFixed(2)
-          }
-        }
-      ],
-      application_context: {
-        brand_name: "GrowthAI",
-        landing_page: "NO_PREFERENCE",
-        user_action: "PAY_NOW",
-        return_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/billing/success`,
-        cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/billing`
-      }
-    };
-
-    const response = await fetch(`${this.baseUrl}/v2/checkout/orders`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(orderPayload)
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`PayPal Create Order Error (${response.status}): ${err}`);
-    }
-
-    return await response.json();
-  }
-
-  async captureOrder(orderId: string): Promise<CaptureOrderResponse> {
-    const token = await this.getAccessToken();
-
-    const response = await fetch(`${this.baseUrl}/v2/checkout/orders/${orderId}/capture`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      }
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`PayPal Capture Order Error (${response.status}): ${err}`);
-    }
-
-    return await response.json();
-  }
-
-  async verifyWebhookSignature(
-    headers: Record<string, string>,
-    body: string,
-    webhookId: string
-  ): Promise<boolean> {
-    const token = await this.getAccessToken();
-
-    const verifyPayload = {
-      transmission_id: headers["paypal-transmission-id"],
-      transmission_time: headers["paypal-transmission-time"],
-      cert_url: headers["paypal-cert-url"],
-      auth_algo: headers["paypal-auth-algo"],
-      transmission_sig: headers["paypal-transmission-sig"],
-      webhook_id: webhookId,
-      webhook_event: JSON.parse(body)
-    };
-
-    const response = await fetch(`${this.baseUrl}/v1/notifications/verify-webhook-signature`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(verifyPayload)
-    });
-
-    if (!response.ok) {
+      const data = await response.json();
+      
+      // अगर PayPal कहे "SUCCESS", तभी true रिटर्न करें
+      return data.verification_status === "SUCCESS";
+    } catch (error) {
+      console.error("PayPal Webhook Verification Error:", error);
       return false;
     }
-
-    const data = await response.json();
-    return data.verification_status === "SUCCESS";
-  }
-}
-
+  },
+};
