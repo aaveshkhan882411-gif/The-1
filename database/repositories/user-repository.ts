@@ -1,362 +1,52 @@
-*
- * @file database/repositories/user-repository.ts
- * @description PostgreSQL repository for GrowthAI users.
- *
- * All user database operations are centralized here.
- * Business logic should use this repository instead of executing
- * user SQL directly.
- */
-
-import "server-only";
-
-import type {
-  DatabaseAdapter,
-  QueryOptions,
-  QueryResult,
-  UUID,
-} from "../types";
-import { Repository } from "../repository";
-
-export type UserRole =
-  | "owner"
-  | "admin"
-  | "manager"
-  | "agent_manager"
-  | "sales"
-  | "support"
-  | "analyst"
-  | "member"
-  | "viewer";
-
-export type UserStatus =
-  | "active"
-  | "suspended"
-  | "deactivated";
+import { query } from "../client";
 
 export interface UserRecord {
-  readonly id: UUID;
-  readonly tenant_id: UUID;
-  readonly email: string;
-  readonly name: string | null;
-  readonly role: UserRole;
-  readonly email_verified: boolean;
-  readonly status: UserStatus;
-  readonly created_at: string;
-  readonly updated_at: string;
+  id: string;
+  tenant_id: string;
+  email: string;
+  password_hash: string;
+  full_name: string;
+  role: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
-export interface CreateUserInput {
-  readonly tenant_id: UUID;
-  readonly email: string;
-  readonly name?: string | null;
-  readonly role?: UserRole;
-  readonly email_verified?: boolean;
-  readonly status?: UserStatus;
-}
-
-export interface UpdateUserInput {
-  readonly email?: string;
-  readonly name?: string | null;
-  readonly role?: UserRole;
-  readonly email_verified?: boolean;
-  readonly status?: UserStatus;
-}
-
-export class UserRepository extends Repository<
-  UserRecord,
-  CreateUserInput,
-  UpdateUserInput
-> {
-  public constructor(db: DatabaseAdapter) {
-    super(db, "users");
-  }
-
-  /**
-   * Finds a user by ID.
-   *
-   * tenantId is required so callers cannot accidentally
-   * access a user belonging to another tenant.
-   */
-  public async findById(
-    id: UUID,
-    tenantId?: UUID,
-  ): Promise<UserRecord | null> {
-    const result = await this.db.query<UserRecord>(
-      `
-        SELECT
-          id,
-          tenant_id,
-          email,
-          name,
-          role,
-          email_verified,
-          status,
-          created_at,
-          updated_at
-        FROM users
-        WHERE id = $1
-          AND ($2::uuid IS NULL OR tenant_id = $2)
-        LIMIT 1
-      `,
-      [id, tenantId ?? null],
+export const userRepository = {
+  async findByEmail(email: string): Promise<UserRecord null |> {
+    const res = await query(
+      "SELECT * FROM users WHERE email = $1 LIMIT 1",
+      [email.toLowerCase().trim()]
     );
+    return res.rows[0] || null;
+  },
 
-    return result.rows[0] ?? null;
-  }
-
-  /**
-   * Finds a user by email within a tenant.
-   */
-  public async findByEmail(
-    tenantId: UUID,
-    email: string,
-  ): Promise<UserRecord | null> {
-    const normalizedEmail = email.trim().toLowerCase();
-
-    if (!normalizedEmail) {
-      return null;
-    }
-
-    const result = await this.db.query<UserRecord>(
-      `
-        SELECT
-          id,
-          tenant_id,
-          email,
-          name,
-          role,
-          email_verified,
-          status,
-          created_at,
-          updated_at
-        FROM users
-        WHERE tenant_id = $1
-          AND LOWER(email) = $2
-        LIMIT 1
-      `,
-      [tenantId, normalizedEmail],
+  async findById(id: string): Promise<UserRecord null |> {
+    const res = await query(
+      "SELECT * FROM users WHERE id = $1 LIMIT 1",
+      [id]
     );
+    return res.rows[0] || null;
+  },
 
-    return result.rows[0] ?? null;
-  }
-
-  /**
-   * Returns users belonging to a tenant.
-   */
-  public async findMany(
-    options: QueryOptions & {
-      readonly tenantId?: UUID;
-    } = {},
-  ): Promise<QueryResult<UserRecord>> {
-    const limit = Math.min(
-      Math.max(Math.floor(options.limit ?? 25), 1),
-      100,
-    );
-
-    const offset = Math.max(
-      Math.floor(options.offset ?? 0),
-      0,
-    );
-
-    if (!options.tenantId) {
-      return {
-        rows: [],
-        count: 0,
-      };
-    }
-
-    const result = await this.db.query<UserRecord>(
-      `
-        SELECT
-          id,
-          tenant_id,
-          email,
-          name,
-          role,
-          email_verified,
-          status,
-          created_at,
-          updated_at
-        FROM users
-        WHERE tenant_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2
-        OFFSET $3
-      `,
-      [options.tenantId, limit, offset],
-    );
-
-    const countResult = await this.db.query<{ count: string }>(
-      `
-        SELECT COUNT(*)::text AS count
-        FROM users
-        WHERE tenant_id = $1
-      `,
-      [options.tenantId],
-    );
-
-    return {
-      rows: result.rows,
-      count: Number(countResult.rows[0]?.count ?? 0),
-    };
-  }
-
-  /**
-   * Creates a user inside a tenant.
-   */
-  public async create(
-    input: CreateUserInput,
-  ): Promise<UserRecord> {
-    const email = input.email.trim().toLowerCase();
-    const name = input.name?.trim() || null;
-    const role = input.role ?? "member";
-    const emailVerified = input.email_verified ?? false;
-    const status = input.status ?? "active";
-
-    if (!input.tenant_id) {
-      throw new Error("Tenant ID is required.");
-    }
-
-    if (!email) {
-      throw new Error("User email is required.");
-    }
-
-    const result = await this.db.query<UserRecord>(
-      `
-        INSERT INTO users (
-          tenant_id,
-          email,
-          name,
-          role,
-          email_verified,
-          status
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING
-          id,
-          tenant_id,
-          email,
-          name,
-          role,
-          email_verified,
-          status,
-          created_at,
-          updated_at
-      `,
+  async create(user: {
+    tenant_id: string;
+    email: string;
+    password_hash: string;
+    full_name: string;
+    role?: string;
+  }): Promise<UserRecord> {
+    const res = await query(
+      `INSERT INTO users (tenant_id, email, password_hash, full_name, role)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
       [
-        input.tenant_id,
-        email,
-        name,
-        role,
-        emailVerified,
-        status,
-      ],
+        user.tenant_id,
+        user.email.toLowerCase().trim(),
+        user.password_hash,
+        user.full_name,
+        user.role || "member"
+      ]
     );
-
-    const user = result.rows[0];
-
-    if (!user) {
-      throw new Error("Failed to create user.");
-    }
-
-    return user;
+    return res.rows[0];
   }
-
-  /**
-   * Updates a user.
-   *
-   * The tenant is taken from the existing record and cannot
-   * be changed through this method.
-   */
-  public async update(
-    id: UUID,
-    input: UpdateUserInput,
-  ): Promise<UserRecord> {
-    const existing = await this.findById(id);
-
-    if (!existing) {
-      throw new Error("User not found.");
-    }
-
-    const email =
-      input.email !== undefined
-        ? input.email.trim().toLowerCase()
-        : existing.email;
-
-    const name =
-      input.name !== undefined
-        ? input.name?.trim() || null
-        : existing.name;
-
-    const role = input.role ?? existing.role;
-
-    const emailVerified =
-      input.email_verified ??
-      existing.email_verified;
-
-    const status =
-      input.status ?? existing.status;
-
-    if (!email) {
-      throw new Error("User email is required.");
-    }
-
-    const result = await this.db.query<UserRecord>(
-      `
-        UPDATE users
-        SET
-          email = $1,
-          name = $2,
-          role = $3,
-          email_verified = $4,
-          status = $5
-        WHERE id = $6
-        RETURNING
-          id,
-          tenant_id,
-          email,
-          name,
-          role,
-          email_verified,
-          status,
-          created_at,
-          updated_at
-      `,
-      [
-        email,
-        name,
-        role,
-        emailVerified,
-        status,
-        id,
-      ],
-    );
-
-    const user = result.rows[0];
-
-    if (!user) {
-      throw new Error("Failed to update user.");
-    }
-
-    return user;
-  }
-
-  /**
-   * Deletes a user by ID.
-   */
-  public async delete(id: UUID): Promise<void> {
-    const result = await this.db.execute(
-      `
-        DELETE FROM users
-        WHERE id = $1
-      `,
-      [id],
-    );
-
-    if (result.affectedRows === 0) {
-      throw new Error("User not found.");
-    }
-  }
-}
-
-export default UserRepository;
+};
