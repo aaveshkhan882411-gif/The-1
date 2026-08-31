@@ -2,7 +2,7 @@
 -- PostgreSQL initial database schema
 -- Migration: 001_initial_schema
 --
--- This migration is intentionally PostgreSQL-only.
+-- PostgreSQL-only.
 -- Supabase is not required.
 -- MySQL is not used.
 
@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS tenants (
 
 CREATE INDEX IF NOT EXISTS idx_tenants_status
     ON tenants(status);
-
 
 -- =========================================================
 -- USERS
@@ -64,11 +63,7 @@ CREATE TABLE IF NOT EXISTS users (
 
     status VARCHAR(32) NOT NULL DEFAULT 'active'
         CHECK (
-            status IN (
-                'active',
-                'suspended',
-                'deactivated'
-            )
+            status IN ('active', 'suspended', 'deactivated')
         ),
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -87,7 +82,6 @@ CREATE INDEX IF NOT EXISTS idx_users_email
 CREATE INDEX IF NOT EXISTS idx_users_status
     ON users(status);
 
-
 -- =========================================================
 -- AGENTS
 -- =========================================================
@@ -105,12 +99,7 @@ CREATE TABLE IF NOT EXISTS agents (
 
     status VARCHAR(32) NOT NULL DEFAULT 'active'
         CHECK (
-            status IN (
-                'active',
-                'inactive',
-                'paused',
-                'error'
-            )
+            status IN ('active', 'inactive', 'paused', 'error')
         ),
 
     configuration JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -127,7 +116,6 @@ CREATE INDEX IF NOT EXISTS idx_agents_status
 
 CREATE INDEX IF NOT EXISTS idx_agents_type
     ON agents(type);
-
 
 -- =========================================================
 -- LEADS
@@ -189,7 +177,6 @@ CREATE INDEX IF NOT EXISTS idx_leads_assigned_agent
 CREATE INDEX IF NOT EXISTS idx_leads_created_at
     ON leads(created_at DESC);
 
-
 -- =========================================================
 -- SUBSCRIPTIONS
 -- =========================================================
@@ -234,7 +221,6 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_tenant_id
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status
     ON subscriptions(status);
 
-
 -- =========================================================
 -- SECURITY AUDIT LOG
 -- =========================================================
@@ -275,7 +261,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_event
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at
     ON audit_logs(created_at DESC);
 
-
 -- =========================================================
 -- UPDATED_AT TRIGGER
 -- =========================================================
@@ -290,14 +275,12 @@ BEGIN
 END;
 $$;
 
-
 DROP TRIGGER IF EXISTS tenants_set_updated_at ON tenants;
 
 CREATE TRIGGER tenants_set_updated_at
 BEFORE UPDATE ON tenants
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
-
 
 DROP TRIGGER IF EXISTS users_set_updated_at ON users;
 
@@ -306,14 +289,12 @@ BEFORE UPDATE ON users
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
-
 DROP TRIGGER IF EXISTS agents_set_updated_at ON agents;
 
 CREATE TRIGGER agents_set_updated_at
 BEFORE UPDATE ON agents
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
-
 
 DROP TRIGGER IF EXISTS leads_set_updated_at ON leads;
 
@@ -322,14 +303,12 @@ BEFORE UPDATE ON leads
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
-
 DROP TRIGGER IF EXISTS subscriptions_set_updated_at ON subscriptions;
 
 CREATE TRIGGER subscriptions_set_updated_at
 BEFORE UPDATE ON subscriptions
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
-
 
 -- =========================================================
 -- SCHEMA VERSION
