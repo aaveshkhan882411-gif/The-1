@@ -11,7 +11,7 @@ export interface UserRecord {
   updated_at: Date;
 }
 
-export const userRepository = {
+export const UserRepository = {
   async findByEmail(email: string): Promise<UserRecord | null> {
     const res = await query(
       "SELECT * FROM users WHERE email = $1 LIMIT 1",
