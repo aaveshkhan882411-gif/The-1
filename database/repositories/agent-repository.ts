@@ -66,3 +66,6 @@ export const AgentRepository = {
     return res.rows[0] || null;
   }
 };
+
+// यह लाइन केस-सेंसिटिव (Case-sensitive) एरर को रोक लेगी
+export const agentRepository = AgentRepository;
