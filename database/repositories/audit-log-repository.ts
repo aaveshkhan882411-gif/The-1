@@ -1,3 +1,11 @@
+/**
+ * @file database/repositories/audit-log-repository.ts
+ * @description PostgreSQL repository for immutable GrowthAI audit logs.
+ *
+ * Audit logs are append-only.
+ * Tenant filtering is enforced for tenant-scoped reads.
+ */
+
 import "server-only";
 
 import type {
@@ -32,7 +40,7 @@ export interface CreateAuditLogInput {
 }
 
 export interface AuditLogQueryOptions extends QueryOptions {
-  readonly tenantId?: UUID;
+  readonly tenantId: UUID;
   readonly userId?: UUID;
   readonly event?: string;
 }
@@ -48,32 +56,33 @@ export class AuditLogRepository extends Repository<
 
   public async findById(
     id: UUID,
+    tenantId: UUID,
   ): Promise<AuditLogRecord | null> {
-    const result =
-      await this.db.query<AuditLogRecord>(
-        `
-          SELECT
-            id,
-            tenant_id,
-            user_id,
-            event,
-            request_id,
-            ip_address::text AS ip_address,
-            user_agent,
-            metadata,
-            created_at
-          FROM audit_logs
-          WHERE id = $1
-          LIMIT 1
-        `,
-        [id],
-      );
+    const result = await this.db.query<AuditLogRecord>(
+      `
+        SELECT
+          id,
+          tenant_id,
+          user_id,
+          event,
+          request_id,
+          ip_address::text AS ip_address,
+          user_agent,
+          metadata,
+          created_at
+        FROM audit_logs
+        WHERE id = $1
+          AND tenant_id = $2
+        LIMIT 1
+      `,
+      [id, tenantId],
+    );
 
     return result.rows[0] ?? null;
   }
 
   public async findMany(
-    options: AuditLogQueryOptions = {},
+    options: AuditLogQueryOptions,
   ): Promise<QueryResult<AuditLogRecord>> {
     const limit = Math.min(
       Math.max(Math.floor(options.limit ?? 50), 1),
@@ -85,75 +94,58 @@ export class AuditLogRepository extends Repository<
       0,
     );
 
-    const conditions: string[] = [];
-    const params: unknown[] = [];
+    const params: unknown[] = [options.tenantId];
 
-    if (options.tenantId) {
-      params.push(options.tenantId);
-      conditions.push(
-        `tenant_id = $${params.length}`,
-      );
-    }
+    const conditions: string[] = [
+      "tenant_id = $1",
+    ];
 
     if (options.userId) {
       params.push(options.userId);
-      conditions.push(
-        `user_id = $${params.length}`,
-      );
+      conditions.push(`user_id = $${params.length}`);
     }
 
     if (options.event) {
       params.push(options.event);
-      conditions.push(
-        `event = $${params.length}`,
-      );
+      conditions.push(`event = $${params.length}`);
     }
-
-    const whereClause =
-      conditions.length > 0
-        ? `WHERE ${conditions.join(" AND ")}`
-        : "";
 
     const limitParam = params.length + 1;
     const offsetParam = params.length + 2;
 
-    const result =
-      await this.db.query<AuditLogRecord>(
-        `
-          SELECT
-            id,
-            tenant_id,
-            user_id,
-            event,
-            request_id,
-            ip_address::text AS ip_address,
-            user_agent,
-            metadata,
-            created_at
-          FROM audit_logs
-          ${whereClause}
-          ORDER BY created_at DESC
-          LIMIT $${limitParam}
-          OFFSET $${offsetParam}
-        `,
-        [...params, limit, offset],
-      );
+    const result = await this.db.query<AuditLogRecord>(
+      `
+        SELECT
+          id,
+          tenant_id,
+          user_id,
+          event,
+          request_id,
+          ip_address::text AS ip_address,
+          user_agent,
+          metadata,
+          created_at
+        FROM audit_logs
+        WHERE ${conditions.join(" AND ")}
+        ORDER BY created_at DESC
+        LIMIT $${limitParam}
+        OFFSET $${offsetParam}
+      `,
+      [...params, limit, offset],
+    );
 
-    const countResult =
-      await this.db.query<{ count: string }>(
-        `
-          SELECT COUNT(*)::text AS count
-          FROM audit_logs
-          ${whereClause}
-        `,
-        params,
-      );
+    const countResult = await this.db.query<{ count: string }>(
+      `
+        SELECT COUNT(*)::text AS count
+        FROM audit_logs
+        WHERE ${conditions.join(" AND ")}
+      `,
+      params,
+    );
 
     return {
       rows: result.rows,
-      count: Number(
-        countResult.rows[0]?.count ?? 0,
-      ),
+      count: Number(countResult.rows[0]?.count ?? 0),
     };
   }
 
@@ -163,9 +155,7 @@ export class AuditLogRepository extends Repository<
     const event = input.event.trim();
 
     if (!event) {
-      throw new Error(
-        "Audit event is required.",
-      );
+      throw new Error("Audit event is required.");
     }
 
     if (event.length > 64) {
@@ -174,74 +164,69 @@ export class AuditLogRepository extends Repository<
       );
     }
 
-    const result =
-      await this.db.query<AuditLogRecord>(
-        `
-          INSERT INTO audit_logs (
-            tenant_id,
-            user_id,
-            event,
-            request_id,
-            ip_address,
-            user_agent,
-            metadata
-          )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7::jsonb
-          )
-          RETURNING
-            id,
-            tenant_id,
-            user_id,
-            event,
-            request_id,
-            ip_address::text AS ip_address,
-            user_agent,
-            metadata,
-            created_at
-        `,
-        [
-          input.tenant_id ?? null,
-          input.user_id ?? null,
-          event,
-          input.request_id ?? null,
-          input.ip_address ?? null,
-          input.user_agent ?? null,
-          JSON.stringify(
-            input.metadata ?? {},
-          ),
-        ],
+    if (input.user_id && !input.tenant_id) {
+      throw new Error(
+        "Tenant ID is required when user ID is provided.",
       );
+    }
+
+    const result = await this.db.query<AuditLogRecord>(
+      `
+        INSERT INTO audit_logs (
+          tenant_id,
+          user_id,
+          event,
+          request_id,
+          ip_address,
+          user_agent,
+          metadata
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7::jsonb
+        )
+        RETURNING
+          id,
+          tenant_id,
+          user_id,
+          event,
+          request_id,
+          ip_address::text AS ip_address,
+          user_agent,
+          metadata,
+          created_at
+      `,
+      [
+        input.tenant_id ?? null,
+        input.user_id ?? null,
+        event,
+        input.request_id ?? null,
+        input.ip_address ?? null,
+        input.user_agent ?? null,
+        JSON.stringify(input.metadata ?? {}),
+      ],
+    );
 
     const record = result.rows[0];
 
     if (!record) {
-      throw new Error(
-        "Failed to create audit log.",
-      );
+      throw new Error("Failed to create audit log.");
     }
 
     return record;
   }
 
-  /**
-   * Audit logs are immutable.
-   */
   public async update(): Promise<never> {
     throw new Error(
       "Audit logs are immutable and cannot be updated.",
     );
   }
 
-  /**
-   * Audit logs are retained for security/audit purposes.
-   */
   public async delete(): Promise<void> {
     throw new Error(
       "Audit logs cannot be deleted through the repository.",
