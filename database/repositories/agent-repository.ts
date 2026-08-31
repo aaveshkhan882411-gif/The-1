@@ -13,7 +13,7 @@ export interface AgentRecord {
   updated_at: Date;
 }
 
-export const agentRepository = {
+export const AgentRepository = {
   async findByIdAndTenant(id: string, tenantId: string): Promise<AgentRecord | null> {
     const res = await query(
       "SELECT * FROM agents WHERE id = $1 AND tenant_id = $2 LIMIT 1",
