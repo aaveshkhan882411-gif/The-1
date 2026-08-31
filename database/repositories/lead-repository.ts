@@ -2,8 +2,7 @@
  * @file database/repositories/lead-repository.ts
  * @description PostgreSQL repository for GrowthAI leads.
  *
- * All lead database operations are centralized here.
- * Tenant isolation is enforced at repository level.
+ * Tenant isolation is enforced for all tenant-scoped operations.
  */
 
 import "server-only";
@@ -64,7 +63,7 @@ export interface UpdateLeadInput {
 }
 
 export interface LeadQueryOptions extends QueryOptions {
-  readonly tenantId?: UUID;
+  readonly tenantId: UUID;
   readonly status?: LeadStatus;
   readonly assignedAgentId?: UUID;
 }
@@ -78,15 +77,9 @@ export class LeadRepository extends Repository<
     super(db, "leads");
   }
 
-  /**
-   * Finds a lead by ID.
-   *
-   * When tenantId is supplied, the lead must belong
-   * to that tenant.
-   */
   public async findById(
     id: UUID,
-    tenantId?: UUID,
+    tenantId: UUID,
   ): Promise<LeadRecord | null> {
     const result = await this.db.query<LeadRecord>(
       `
@@ -105,20 +98,17 @@ export class LeadRepository extends Repository<
           updated_at
         FROM leads
         WHERE id = $1
-          AND ($2::uuid IS NULL OR tenant_id = $2)
+          AND tenant_id = $2
         LIMIT 1
       `,
-      [id, tenantId ?? null],
+      [id, tenantId],
     );
 
     return result.rows[0] ?? null;
   }
 
-  /**
-   * Returns leads belonging to a tenant.
-   */
   public async findMany(
-    options: LeadQueryOptions = {},
+    options: LeadQueryOptions,
   ): Promise<QueryResult<LeadRecord>> {
     const limit = Math.min(
       Math.max(Math.floor(options.limit ?? 25), 1),
@@ -130,16 +120,7 @@ export class LeadRepository extends Repository<
       0,
     );
 
-    if (!options.tenantId) {
-      return {
-        rows: [],
-        count: 0,
-      };
-    }
-
-    const params: unknown[] = [
-      options.tenantId,
-    ];
+    const params: unknown[] = [options.tenantId];
 
     const conditions: string[] = [
       "tenant_id = $1",
@@ -147,9 +128,7 @@ export class LeadRepository extends Repository<
 
     if (options.status) {
       params.push(options.status);
-      conditions.push(
-        `status = $${params.length}`,
-      );
+      conditions.push(`status = $${params.length}`);
     }
 
     if (options.assignedAgentId) {
@@ -161,8 +140,6 @@ export class LeadRepository extends Repository<
 
     const limitParam = params.length + 1;
     const offsetParam = params.length + 2;
-
-    params.push(limit, offset);
 
     const result = await this.db.query<LeadRecord>(
       `
@@ -185,35 +162,46 @@ export class LeadRepository extends Repository<
         LIMIT $${limitParam}
         OFFSET $${offsetParam}
       `,
+      [...params, limit, offset],
+    );
+
+    const countResult = await this.db.query<{ count: string }>(
+      `
+        SELECT COUNT(*)::text AS count
+        FROM leads
+        WHERE ${conditions.join(" AND ")}
+      `,
       params,
     );
 
-    const countParams = params.slice(
-      0,
-      params.length - 2,
-    );
-
-    const countResult =
-      await this.db.query<{ count: string }>(
-        `
-          SELECT COUNT(*)::text AS count
-          FROM leads
-          WHERE ${conditions.join(" AND ")}
-        `,
-        countParams,
-      );
-
     return {
       rows: result.rows,
-      count: Number(
-        countResult.rows[0]?.count ?? 0,
-      ),
+      count: Number(countResult.rows[0]?.count ?? 0),
     };
   }
 
-  /**
-   * Creates a new lead.
-   */
+  private async assertAgentBelongsToTenant(
+    agentId: UUID,
+    tenantId: UUID,
+  ): Promise<void> {
+    const result = await this.db.query<{ id: UUID }>(
+      `
+        SELECT id
+        FROM agents
+        WHERE id = $1
+          AND tenant_id = $2
+        LIMIT 1
+      `,
+      [agentId, tenantId],
+    );
+
+    if (!result.rows[0]) {
+      throw new Error(
+        "Assigned agent does not belong to the tenant.",
+      );
+    }
+  }
+
   public async create(
     input: CreateLeadInput,
   ): Promise<LeadRecord> {
@@ -227,29 +215,11 @@ export class LeadRepository extends Repository<
       throw new Error("Lead name is required.");
     }
 
-    if (
-      input.assigned_agent_id
-    ) {
-      const agentCheck =
-        await this.db.query<{ id: UUID }>(
-          `
-            SELECT id
-            FROM agents
-            WHERE id = $1
-              AND tenant_id = $2
-            LIMIT 1
-          `,
-          [
-            input.assigned_agent_id,
-            input.tenant_id,
-          ],
-        );
-
-      if (!agentCheck.rows[0]) {
-        throw new Error(
-          "Assigned agent does not belong to the tenant.",
-        );
-      }
+    if (input.assigned_agent_id) {
+      await this.assertAgentBelongsToTenant(
+        input.assigned_agent_id,
+        input.tenant_id,
+      );
     }
 
     const result = await this.db.query<LeadRecord>(
@@ -312,16 +282,12 @@ export class LeadRepository extends Repository<
     return lead;
   }
 
-  /**
-   * Updates an existing lead.
-   *
-   * tenant_id is intentionally immutable.
-   */
   public async update(
     id: UUID,
+    tenantId: UUID,
     input: UpdateLeadInput,
   ): Promise<LeadRecord> {
-    const existing = await this.findById(id);
+    const existing = await this.findById(id, tenantId);
 
     if (!existing) {
       throw new Error("Lead not found.");
@@ -342,26 +308,10 @@ export class LeadRepository extends Repository<
         : existing.assigned_agent_id;
 
     if (assignedAgentId) {
-      const agentCheck =
-        await this.db.query<{ id: UUID }>(
-          `
-            SELECT id
-            FROM agents
-            WHERE id = $1
-              AND tenant_id = $2
-            LIMIT 1
-          `,
-          [
-            assignedAgentId,
-            existing.tenant_id,
-          ],
-        );
-
-      if (!agentCheck.rows[0]) {
-        throw new Error(
-          "Assigned agent does not belong to the tenant.",
-        );
-      }
+      await this.assertAgentBelongsToTenant(
+        assignedAgentId,
+        tenantId,
+      );
     }
 
     const result = await this.db.query<LeadRecord>(
@@ -377,6 +327,7 @@ export class LeadRepository extends Repository<
           notes = $7,
           assigned_agent_id = $8
         WHERE id = $9
+          AND tenant_id = $10
         RETURNING
           id,
           tenant_id,
@@ -411,6 +362,7 @@ export class LeadRepository extends Repository<
           : existing.notes,
         assignedAgentId,
         id,
+        tenantId,
       ],
     );
 
@@ -423,18 +375,17 @@ export class LeadRepository extends Repository<
     return lead;
   }
 
-  /**
-   * Deletes a lead by ID.
-   */
   public async delete(
     id: UUID,
+    tenantId: UUID,
   ): Promise<void> {
     const result = await this.db.execute(
       `
         DELETE FROM leads
         WHERE id = $1
+          AND tenant_id = $2
       `,
-      [id],
+      [id, tenantId],
     );
 
     if (result.affectedRows === 0) {
@@ -442,15 +393,10 @@ export class LeadRepository extends Repository<
     }
   }
 
-  /**
-   * Returns the total number of leads for a tenant.
-   */
   public async countByTenant(
     tenantId: UUID,
   ): Promise<number> {
-    const result = await this.db.query<{
-      count: string;
-    }>(
+    const result = await this.db.query<{ count: string }>(
       `
         SELECT COUNT(*)::text AS count
         FROM leads
@@ -459,37 +405,24 @@ export class LeadRepository extends Repository<
       [tenantId],
     );
 
-    return Number(
-      result.rows[0]?.count ?? 0,
-    );
+    return Number(result.rows[0]?.count ?? 0);
   }
 
-  /**
-   * Returns the number of leads created during
-   * the supplied period.
-   */
   public async countSince(
     tenantId: UUID,
     since: Date,
   ): Promise<number> {
-    const result = await this.db.query<{
-      count: string;
-    }>(
+    const result = await this.db.query<{ count: string }>(
       `
         SELECT COUNT(*)::text AS count
         FROM leads
         WHERE tenant_id = $1
           AND created_at >= $2
       `,
-      [
-        tenantId,
-        since.toISOString(),
-      ],
+      [tenantId, since.toISOString()],
     );
 
-    return Number(
-      result.rows[0]?.count ?? 0,
-    );
+    return Number(result.rows[0]?.count ?? 0);
   }
 }
 
