@@ -1,70 +1,87 @@
 import { NextRequest, NextResponse } from "next/server";
-import { UserService } from "@/services/user-service";
-import { TenantService } from "@/services/tenant-service";
-import { AuditLogService } from "@/services/audit-log-service";
+import { userService } from "../../../../services/user-service";
+import { tenantService } from "../../../../services/tenant-service";
+import { auditLogService } from "../../../../services/audit-log-service";
+import jwt from "jsonwebtoken";
+
+const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_fallback_key";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { email, name, organization_name, password } = body;
+    const { email, password, fullName, organizationName } = await req.json();
 
-    if (!email || !organization_name) {
+    if (!email || !password || !fullName || !organizationName) {
       return NextResponse.json(
-        { error: "Email and organization_name are required" },
+        { error: "All fields are required (email, password, fullName, organizationName)." },
         { status: 400 }
       );
     }
 
-    const tenantService = new TenantService();
-    const userService = new UserService();
-    const auditLogService = new AuditLogService();
+    const existingUser = await userService.getUserByEmail(email);
+    if (existingUser) {
+      return NextResponse.json(
+        { error: "An account with this email already exists." },
+        { status: 409 }
+      );
+    }
 
-    // 1. नया Tenant / Organization बनाएँ
-    const tenantSlug = organization_name.toLowerCase().replace(/[^a-z0-9]/g, "-");
     const tenant = await tenantService.createTenant({
-      name: organization_name,
-      slug: `${tenantSlug}-${Date.now().toString().slice(-4)}`,
-      plan: "free",
-      status: "active"
+      name: organizationName,
+      tier: "free_trial"
     });
 
-    // 2. Admin User बनाएँ
     const user = await userService.createUser({
-      tenant_id: tenant.id as string,
-      email,
-      name: name || organization_name,
+      tenant_id: tenant.id,
+      email: email,
+      password: password,
+      full_name: fullName,
       role: "admin"
     });
 
-    // 3. ऑडिट लॉग दर्ज करें
-    await auditLogService.logEvent({
-      tenant_id: tenant.id as string,
-      user_id: user.id as string,
-      event: "USER_REGISTERED_TENANT_CREATED",
-      metadata: { email, organization_name }
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        tenantId: tenant.id,
+        role: user.role,
+        email: user.email
+      },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    await auditLogService.recordLog({
+      tenant_id: tenant.id,
+      user_id: user.id,
+      action: "USER_REGISTERED",
+      resource_type: "user",
+      resource_id: user.id,
+      metadata: { organization: organizationName }
     });
 
-    return NextResponse.json(
-      {
-        message: "Registration successful",
-        tenant: {
-          id: tenant.id,
-          name: tenant.name,
-          slug: tenant.slug
-        },
-        user: {
-          id: user.id,
-          email: user.email,
-          role: user.role
-        }
-      },
-      { status: 201 }
-    );
+    const response = NextResponse.json({
+      success: true,
+      tenantId: tenant.id,
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        role: user.role
+      }
+    });
+
+    response.cookies.set("auth_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60,
+      path: "/"
+    });
+
+    return response;
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Registration failed" },
+      { error: "Registration failed.", details: error.message },
       { status: 500 }
     );
   }
 }
-
