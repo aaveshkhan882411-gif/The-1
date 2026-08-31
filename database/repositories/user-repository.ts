@@ -12,7 +12,7 @@ export interface UserRecord {
 }
 
 export const userRepository = {
-  async findByEmail(email: string): Promise<UserRecord null |> {
+  async findByEmail(email: string): Promise<UserRecord | null> {
     const res = await query(
       "SELECT * FROM users WHERE email = $1 LIMIT 1",
       [email.toLowerCase().trim()]
@@ -20,7 +20,7 @@ export const userRepository = {
     return res.rows[0] || null;
   },
 
-  async findById(id: string): Promise<UserRecord null |> {
+  async findById(id: string): Promise<UserRecord | null> {
     const res = await query(
       "SELECT * FROM users WHERE id = $1 LIMIT 1",
       [id]
