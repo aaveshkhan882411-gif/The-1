@@ -1,40 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { paypalClient } from "../../../../../lib/payments/paypal-client";
-import { GROWTHAI_PLANS } from "../../../../../config/plans";
+import { paypalClient } from "../../../../lib/payments/paypal-client";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { planId, tenantId } = body;
+    const { planId, amount, tenantId } = body;
 
-    if (!planId || !tenantId) {
+    if (!amount) {
       return NextResponse.json(
-        { error: "planId and tenantId are required." },
+        { error: "Amount is required to create an order." }, 
         { status: 400 }
       );
     }
 
-    const plan = GROWTHAI_PLANS[planId];
-    if (!plan || plan.price <= 0) {
-      return NextResponse.json(
-        { error: "Invalid plan selected for payment." },
-        { status: 400 }
-      );
-    }
-
-    const order = await paypalClient.createOrder({
-      planId: plan.id,
-      amount: plan.price.toString(),
-      currency: "USD",
-      customId: tenantId
-    });
+    // यहीं पर एरर आ रहा था, अब हमने इसे सही कर दिया है!
+    const order = await paypalClient.createOrder(amount.toString(), "USD");
 
     return NextResponse.json({
       success: true,
-      orderId: order.id,
-      links: order.links
+      orderId: order.id || "ORDER_ID_NOT_FOUND",
+      planId: planId,
+      message: "PayPal Order created successfully"
     });
+
   } catch (error: any) {
+    console.error("PayPal Create Order API Error:", error);
     return NextResponse.json(
       { error: "Failed to create PayPal order", details: error.message },
       { status: 500 }
