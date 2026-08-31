@@ -526,7 +526,7 @@ export const UpdateAgentInputSchema = partial(
     avatarUrl: Schemas.url,
 
     // Nested partial update.
-    config: partial(AgentConfigSchema.entries),
+    config: partial(AgentConfigSchema),
 
     // Nested partial update.
     permissions: partial(
