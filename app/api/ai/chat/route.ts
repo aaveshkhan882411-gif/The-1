@@ -1,82 +1,70 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AIOrchestrator } from "@/lib/ai/orchestrator";
-import { AgentService } from "@/services/agent-service";
-import { SubscriptionService } from "@/services/subscription-service";
-import { AuditLogService } from "@/services/audit-log-service";
+import { aiOrchestrator } from "../../../../lib/ai/orchestrator";
+import { agentService } from "../../../../services/agent-service";
+import { subscriptionService } from "../../../../services/subscription-service";
+import { auditLogService } from "../../../../services/audit-log-service";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { tenant_id, agent_id, message, conversation_history } = body;
+    const { tenantId, userId, agentId, message, conversationHistory = [] } = body;
 
-    if (!tenant_id || !agent_id || !message) {
+    if (!tenantId || !agentId || !message) {
       return NextResponse.json(
-        { error: "tenant_id, agent_id, and message are required" },
+        { error: "tenantId, agentId, and message are required fields." },
         { status: 400 }
       );
     }
 
-    // 1. एक्टिव सब्सक्रिप्शन चेक करें
-    const subscriptionService = new SubscriptionService();
-    const activeSub = await subscriptionService.getActiveSubscription(tenant_id);
-
-    if (!activeSub || activeSub.status !== "active") {
+    const sub = await subscriptionService.getSubscription(tenantId);
+    if (!sub || sub.status !== "active") {
       return NextResponse.json(
-        { error: "Active subscription required to access AI agents." },
+        { error: "Active subscription required to interact with AI Workforce." },
         { status: 403 }
       );
     }
 
-    // 2. एजेंट की जानकारी और सिस्टम प्रॉम्प्ट लाएं
-    const agentService = new AgentService();
-    const agent = await agentService.getAgentById(tenant_id, agent_id);
-
+    const agent = await agentService.getAgent(agentId, tenantId);
     if (!agent) {
       return NextResponse.json(
-        { error: "Agent not found or inactive" },
+        { error: "Specified AI Agent not found or not provisioned for this tenant." },
         { status: 404 }
       );
     }
 
-    // 3. सेल्फ-होस्टेड AI इनफेरेंस रन करें
-    const orchestrator = new AIOrchestrator();
-    const systemPrompt = agent.configuration?.system_prompt || "You are an AI workforce agent for GrowthAI.";
-
-    const aiResponse = await orchestrator.runAgentTurn(
-      {
-        tenantId: tenant_id,
-        agentId: agent.id as string,
-        systemPrompt
-      },
-      conversation_history || [],
-      message
-    );
-
-    // 4. ऑडिट लॉग में चैट निष्पादन रिकॉर्ड करें
-    const auditLogService = new AuditLogService();
-    await auditLogService.logEvent({
-      tenant_id,
-      event: "AI_AGENT_CHAT_EXECUTED",
-      metadata: {
-        agent_id: agent.id,
-        agent_role: agent.role,
-        tokens_used: aiResponse.usage?.total_tokens || 0
-      }
+    const aiResult = await aiOrchestrator.runAgent({
+      agentName: agent.name,
+      systemPrompt: agent.system_prompt,
+      userMessage: message,
+      conversationHistory: conversationHistory
     });
 
-    return NextResponse.json(
-      {
-        response: aiResponse.content,
-        tool_calls: aiResponse.tool_calls || null,
-        usage: aiResponse.usage
-      },
-      { status: 200 }
-    );
+    if (userId) {
+      await auditLogService.recordLog({
+        tenant_id: tenantId,
+        user_id: userId,
+        action: "AI_AGENT_CHAT_EXECUTION",
+        resource_type: "agent",
+        resource_id: agentId,
+        metadata: {
+          prompt_tokens: aiResult.usage.prompt_tokens,
+          completion_tokens: aiResult.usage.completion_tokens,
+          model: aiResult.model
+        }
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      agentId: agent.id,
+      agentName: agent.name,
+      reply: aiResult.reply,
+      usage: aiResult.usage
+    });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Failed to execute AI chat" },
+      { error: "AI Chat Execution Failed", details: error.message },
       { status: 500 }
     );
   }
 }
-
