@@ -1,4 +1,4 @@
-/**
+*
  * @file database/repositories/user-repository.ts
  * @description PostgreSQL repository for GrowthAI users.
  *
