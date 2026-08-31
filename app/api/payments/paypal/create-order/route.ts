@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PayPalClient } from "@/lib/payments/paypal-client";
-import { getPlan, isValidPurchasablePlan } from "@/config/plans";
+import { paypalClient } from "../../../../../lib/payments/paypal-client";
+import { GROWTHAI_PLANS } from "../../../../../config/plans";
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,33 +9,34 @@ export async function POST(req: NextRequest) {
 
     if (!planId || !tenantId) {
       return NextResponse.json(
-        { error: "planId and tenantId are required" },
+        { error: "planId and tenantId are required." },
         { status: 400 }
       );
     }
 
-    if (!isValidPurchasablePlan(planId)) {
+    const plan = GROWTHAI_PLANS[planId];
+    if (!plan || plan.price <= 0) {
       return NextResponse.json(
-        { error: "Invalid plan or requires manual enterprise consultation" },
+        { error: "Invalid plan selected for payment." },
         { status: 400 }
       );
     }
 
-    const plan = getPlan(planId);
-    if (!plan) {
-      return NextResponse.json({ error: "Plan not found" }, { status: 404 });
-    }
-
-    const paypalClient = new PayPalClient();
     const order = await paypalClient.createOrder({
-      plan,
-      tenantId
+      planId: plan.id,
+      amount: plan.price.toString(),
+      currency: "USD",
+      customId: tenantId
     });
 
-    return NextResponse.json({ orderId: order.id, links: order.links }, { status: 200 });
+    return NextResponse.json({
+      success: true,
+      orderId: order.id,
+      links: order.links
+    });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Failed to create PayPal order" },
+      { error: "Failed to create PayPal order", details: error.message },
       { status: 500 }
     );
   }
