@@ -1,29 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LeadService } from "@/services/lead-service";
-import { AuditLogService } from "@/services/audit-log-service";
+import { leadService } from "../../../services/lead-service";
+import { auditLogService } from "../../../services/audit-log-service";
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const tenantId = searchParams.get("tenant_id");
-    const status = searchParams.get("status");
+    const tenantId = searchParams.get("tenantId") || "tenant-prod-main";
 
-    if (!tenantId) {
-      return NextResponse.json(
-        { error: "tenant_id query parameter is required" },
-        { status: 400 }
-      );
-    }
-
-    const leadService = new LeadService();
-    const leads = status
-      ? await leadService.getLeadsByStatus(tenantId, status)
-      : await leadService.getTenantLeads(tenantId);
-
-    return NextResponse.json({ leads }, { status: 200 });
+    const leads = await leadService.getLeads(tenantId);
+    return NextResponse.json({ success: true, leads });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Failed to fetch leads" },
+      { error: "Failed to fetch leads", details: error.message },
       { status: 500 }
     );
   }
@@ -32,40 +20,38 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { tenant_id, name, email, phone, company, status, score } = body;
+    const { tenantId = "tenant-prod-main", name, email, phone, status = "new", notes = "" } = body;
 
-    if (!tenant_id || !name) {
+    if (!name || !email) {
       return NextResponse.json(
-        { error: "tenant_id and name are required fields" },
+        { error: "Name and email are required fields." },
         { status: 400 }
       );
     }
 
-    const leadService = new LeadService();
     const lead = await leadService.createLead({
-      tenant_id,
+      tenant_id: tenantId,
       name,
-      email: email || undefined,
-      phone: phone || undefined,
-      company: company || undefined,
-      status: status || "new",
-      score: score !== undefined ? score : 0
+      email,
+      phone,
+      status,
+      notes
     });
 
-    const auditLogService = new AuditLogService();
-    await auditLogService.logEvent({
-      tenant_id,
-      event: "LEAD_CREATED",
-      metadata: { lead_id: lead.id, name, email }
+    await auditLogService.recordLog({
+      tenant_id: tenantId,
+      action: "LEAD_CREATED",
+      resource_type: "lead",
+      resource_id: lead.id,
+      metadata: { lead_email: email }
     });
 
-    return NextResponse.json({ message: "Lead created successfully", lead }, { status: 201 });
+    return NextResponse.json({ success: true, lead });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Failed to create lead" },
+      { error: "Failed to create lead", details: error.message },
       { status: 500 }
     );
   }
 }
-
 
