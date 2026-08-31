@@ -1,13 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { GROWTHAI_PLANS, PlanDefinition } from "@/config/plans";
+import { GROWTHAI_PLANS, PlanDefinition } from "../../config/plans";
 
 export default function PricingPage() {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [selectedBillingTab, setSelectedBillingTab] = useState<"monthly" | "annual" | "trial">("monthly");
 
-  // डेमो टेनेंट ID (वास्तविक ऐप में यह यूजर सेशन से आता है)
   const tenantId = "tenant-prod-main";
 
   const handleCheckout = async (plan: PlanDefinition) => {
@@ -30,7 +29,6 @@ export default function PricingPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Order creation failed");
 
-      // PayPal अप्रूवल URL पर रीडायरेक्ट करें
       const approveLink = data.links?.find((l: any) => l.rel === "approve");
       if (approveLink) {
         window.location.href = approveLink.href;
@@ -61,7 +59,6 @@ export default function PricingPage() {
           Scale your business operations 24/7 with autonomous, domain-trained AI employees.
         </p>
 
-        {/* टैब सेलेक्टर */}
         <div className="mt-10 flex justify-center space-x-3">
           {(["monthly", "annual", "trial"] as const).map((tab) => (
             <button
@@ -78,7 +75,6 @@ export default function PricingPage() {
           ))}
         </div>
 
-        {/* प्लान्स ग्रिड */}
         <div className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
           {filteredPlans.map((plan) => (
             <div
@@ -130,4 +126,3 @@ export default function PricingPage() {
     </div>
   );
 }
-
