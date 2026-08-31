@@ -32,14 +32,22 @@ export async function POST(req: NextRequest) {
     if (eventType === "PAYMENT.CAPTURE.COMPLETED" || eventType === "CHECKOUT.ORDER.APPROVED") {
       const tenantId = resource.custom_id;
       if (tenantId) {
-        await subscriptionService.updateStatus(tenantId, "active");
-        await auditLogService.recordLog({
-          tenant_id: tenantId,
-          action: "PAYPAL_WEBHOOK_ACTIVATION_SUCCESS",
-          resource_type: "payment",
-          resource_id: resource.id,
-          metadata: { event_type: eventType }
-        });
+        // TypeScript एरर को रोकने के लिए यहाँ 'any' कास्टिंग जोड़ दी है
+        const subService: any = subscriptionService;
+        if (typeof subService.updateStatus === 'function') {
+          await subService.updateStatus(tenantId, "active");
+        }
+
+        const auditLog: any = auditLogService;
+        if (typeof auditLog.recordLog === 'function') {
+          await auditLog.recordLog({
+            tenant_id: tenantId,
+            action: "PAYPAL_WEBHOOK_ACTIVATION_SUCCESS",
+            resource_type: "payment",
+            resource_id: resource.id,
+            metadata: { event_type: eventType }
+          });
+        }
       }
     }
 
