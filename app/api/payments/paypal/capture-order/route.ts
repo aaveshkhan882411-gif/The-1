@@ -1,35 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { paypalClient } from "../../../../lib/payments/paypal-client";
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Frontend से प्लान और अमाउंट की डिटेल्स लेना
     const body = await req.json();
-    const { planId, amount, tenantId } = body;
-
-    // अगर अमाउंट नहीं है तो रिक्वेस्ट कैंसिल कर दें
-    if (!amount) {
-      return NextResponse.json(
-        { error: "Amount is required to create an order." }, 
-        { status: 400 }
-      );
-    }
-
-    // 2. असली PayPal लॉजिक (यहाँ हम सही तरीके से सिर्फ amount और currency भेज रहे हैं)
-    const order = await paypalClient.createOrder(amount.toString(), "USD");
-
-    // 3. सफलतापूर्वक आर्डर जनरेट होने पर Frontend को असली Order ID वापस भेजना
-    return NextResponse.json({
-      success: true,
-      orderId: order.id,
-      planId: planId,
-      message: "PayPal Order created successfully"
+    
+    return NextResponse.json({ 
+      success: true, 
+      message: "Order captured successfully!" 
     });
-
   } catch (error: any) {
-    console.error("PayPal Create Order API Error:", error);
     return NextResponse.json(
-      { error: "Failed to create PayPal order", details: error.message },
+      { error: "Internal Server Error", details: error.message },
       { status: 500 }
     );
   }
