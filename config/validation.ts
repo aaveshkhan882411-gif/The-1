@@ -530,7 +530,7 @@ export const UpdateAgentInputSchema = partial(
 
     // Nested partial update.
     permissions: partial(
-      AgentPermissionsSchema.entries
+      AgentPermissionsSchema
     ),
 
     // If capabilities are provided, validate the entire array.
