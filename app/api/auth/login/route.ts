@@ -1,54 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
-import { UserService } from "@/services/user-service";
-import { AuditLogService } from "@/services/audit-log-service";
+import { userService } from "../../../../services/user-service";
+import { auditLogService } from "../../../../services/audit-log-service";
+import jwt from "jsonwebtoken";
+
+const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_fallback_key";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { email, password, tenant_id } = body;
+    const { email, password } = await req.json();
 
-    if (!email || !password || !tenant_id) {
+    if (!email || !password) {
       return NextResponse.json(
-        { error: "Email, password, and tenant_id are required" },
+        { error: "Email and password are required." },
         { status: 400 }
       );
     }
 
-    const userService = new UserService();
-    const user = await userService.getUserByEmail(tenant_id, email);
-
+    const user = await userService.validateCredentials(email, password);
     if (!user) {
       return NextResponse.json(
-        { error: "Invalid email or credentials" },
+        { error: "Invalid email or password." },
         { status: 401 }
       );
     }
 
-    const auditLogService = new AuditLogService();
-    await auditLogService.logEvent({
-      tenant_id,
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        tenantId: user.tenant_id,
+        role: user.role,
+        email: user.email
+      },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    await auditLogService.recordLog({
+      tenant_id: user.tenant_id,
       user_id: user.id,
-      event: "USER_LOGIN_SUCCESS",
-      metadata: { email, ip: req.headers.get("x-forwarded-for") || "unknown" }
+      action: "USER_LOGIN_SUCCESS",
+      resource_type: "user",
+      resource_id: user.id,
+      metadata: { email: user.email }
     });
 
-    return NextResponse.json(
-      {
-        message: "Login successful",
-        user: {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          tenant_id: user.tenant_id
-        }
-      },
-      { status: 200 }
-    );
+    const response = NextResponse.json({
+      success: true,
+      user: {
+        id: user.id,
+        tenant_id: user.tenant_id,
+        email: user.email,
+        role: user.role,
+        full_name: user.full_name
+      }
+    });
+
+    response.cookies.set("auth_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60,
+      path: "/"
+    });
+
+    return response;
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Internal server error" },
+      { error: "Login failed.", details: error.message },
       { status: 500 }
     );
   }
 }
-
