@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { paypalClient } from "../../../../lib/payments/paypal-client";
-import { subscriptionService } from "../../../../services/subscription-service";
-import { auditLogService } from "../../../../services/audit-log-service";
+import { SubscriptionService as subscriptionService } from "../../../../services/subscription-service";
+import { AuditLogService as auditLogService } from "../../../../services/audit-log-service";
 
 export async function POST(req: NextRequest) {
   try {
