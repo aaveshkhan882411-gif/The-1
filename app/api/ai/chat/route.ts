@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { aiOrchestrator } from "../../../../lib/ai/orchestrator";
+import { AIOrchestrator } from "../../../../lib/ai/orchestrator";
 import { agentService } from "../../../../services/agent-service";
 import { subscriptionService } from "../../../../services/subscription-service";
 import { auditLogService } from "../../../../services/audit-log-service";
