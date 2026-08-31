@@ -3,7 +3,6 @@
  * @description PostgreSQL repository for GrowthAI subscriptions.
  *
  * Tenant isolation is enforced for tenant-scoped operations.
- * External payment-provider IDs are stored for future PayPal/webhook use.
  */
 
 import "server-only";
@@ -57,7 +56,7 @@ export interface UpdateSubscriptionInput {
 
 export interface SubscriptionQueryOptions
   extends QueryOptions {
-  readonly tenantId?: UUID;
+  readonly tenantId: UUID;
   readonly status?: SubscriptionStatus;
   readonly provider?: string;
 }
@@ -71,48 +70,34 @@ export class SubscriptionRepository extends Repository<
     super(db, "subscriptions");
   }
 
-  /**
-   * Finds a subscription by ID.
-   *
-   * When tenantId is supplied, the subscription
-   * must belong to that tenant.
-   */
   public async findById(
     id: UUID,
-    tenantId?: UUID,
+    tenantId: UUID,
   ): Promise<SubscriptionRecord | null> {
-    const result =
-      await this.db.query<SubscriptionRecord>(
-        `
-          SELECT
-            id,
-            tenant_id,
-            plan,
-            status,
-            provider,
-            external_id,
-            current_period_start,
-            current_period_end,
-            created_at,
-            updated_at
-          FROM subscriptions
-          WHERE id = $1
-            AND (
-              $2::uuid IS NULL
-              OR tenant_id = $2
-            )
-          LIMIT 1
-        `,
-        [id, tenantId ?? null],
-      );
+    const result = await this.db.query<SubscriptionRecord>(
+      `
+        SELECT
+          id,
+          tenant_id,
+          plan,
+          status,
+          provider,
+          external_id,
+          current_period_start,
+          current_period_end,
+          created_at,
+          updated_at
+        FROM subscriptions
+        WHERE id = $1
+          AND tenant_id = $2
+        LIMIT 1
+      `,
+      [id, tenantId],
+    );
 
     return result.rows[0] ?? null;
   }
 
-  /**
-   * Finds a subscription using its payment-provider
-   * external ID.
-   */
   public async findByExternalId(
     provider: string,
     externalId: string,
@@ -136,23 +121,17 @@ export class SubscriptionRepository extends Repository<
             AND external_id = $2
           LIMIT 1
         `,
-        [provider, externalId],
+        [provider.trim(), externalId.trim()],
       );
 
     return result.rows[0] ?? null;
   }
 
-  /**
-   * Returns subscriptions belonging to a tenant.
-   */
   public async findMany(
-    options: SubscriptionQueryOptions = {},
+    options: SubscriptionQueryOptions,
   ): Promise<QueryResult<SubscriptionRecord>> {
     const limit = Math.min(
-      Math.max(
-        Math.floor(options.limit ?? 25),
-        1,
-      ),
+      Math.max(Math.floor(options.limit ?? 25), 1),
       100,
     );
 
@@ -161,16 +140,7 @@ export class SubscriptionRepository extends Repository<
       0,
     );
 
-    if (!options.tenantId) {
-      return {
-        rows: [],
-        count: 0,
-      };
-    }
-
-    const params: unknown[] = [
-      options.tenantId,
-    ];
+    const params: unknown[] = [options.tenantId];
 
     const conditions: string[] = [
       "tenant_id = $1",
@@ -178,22 +148,16 @@ export class SubscriptionRepository extends Repository<
 
     if (options.status) {
       params.push(options.status);
-      conditions.push(
-        `status = $${params.length}`,
-      );
+      conditions.push(`status = $${params.length}`);
     }
 
     if (options.provider) {
       params.push(options.provider);
-      conditions.push(
-        `provider = $${params.length}`,
-      );
+      conditions.push(`provider = $${params.length}`);
     }
 
     const limitParam = params.length + 1;
     const offsetParam = params.length + 2;
-
-    params.push(limit, offset);
 
     const result =
       await this.db.query<SubscriptionRecord>(
@@ -215,13 +179,8 @@ export class SubscriptionRepository extends Repository<
           LIMIT $${limitParam}
           OFFSET $${offsetParam}
         `,
-        params,
+        [...params, limit, offset],
       );
-
-    const countParams = params.slice(
-      0,
-      params.length - 2,
-    );
 
     const countResult =
       await this.db.query<{ count: string }>(
@@ -230,7 +189,7 @@ export class SubscriptionRepository extends Repository<
           FROM subscriptions
           WHERE ${conditions.join(" AND ")}
         `,
-        countParams,
+        params,
       );
 
     return {
@@ -241,9 +200,6 @@ export class SubscriptionRepository extends Repository<
     };
   }
 
-  /**
-   * Creates a subscription.
-   */
   public async create(
     input: CreateSubscriptionInput,
   ): Promise<SubscriptionRecord> {
@@ -255,7 +211,9 @@ export class SubscriptionRepository extends Repository<
     }
 
     if (!plan) {
-      throw new Error("Subscription plan is required.");
+      throw new Error(
+        "Subscription plan is required.",
+      );
     }
 
     if (!provider) {
@@ -276,15 +234,7 @@ export class SubscriptionRepository extends Repository<
             current_period_start,
             current_period_end
           )
-          VALUES (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7
-          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
           RETURNING
             id,
             tenant_id,
@@ -319,16 +269,12 @@ export class SubscriptionRepository extends Repository<
     return subscription;
   }
 
-  /**
-   * Updates a subscription.
-   *
-   * tenant_id remains immutable.
-   */
   public async update(
     id: UUID,
+    tenantId: UUID,
     input: UpdateSubscriptionInput,
   ): Promise<SubscriptionRecord> {
-    const existing = await this.findById(id);
+    const existing = await this.findById(id, tenantId);
 
     if (!existing) {
       throw new Error(
@@ -370,6 +316,7 @@ export class SubscriptionRepository extends Repository<
             current_period_start = $5,
             current_period_end = $6
           WHERE id = $7
+            AND tenant_id = $8
           RETURNING
             id,
             tenant_id,
@@ -396,6 +343,7 @@ export class SubscriptionRepository extends Repository<
             ? input.current_period_end
             : existing.current_period_end,
           id,
+          tenantId,
         ],
       );
 
@@ -410,18 +358,17 @@ export class SubscriptionRepository extends Repository<
     return subscription;
   }
 
-  /**
-   * Deletes a subscription.
-   */
   public async delete(
     id: UUID,
+    tenantId: UUID,
   ): Promise<void> {
     const result = await this.db.execute(
       `
         DELETE FROM subscriptions
         WHERE id = $1
+          AND tenant_id = $2
       `,
-      [id],
+      [id, tenantId],
     );
 
     if (result.affectedRows === 0) {
@@ -431,12 +378,6 @@ export class SubscriptionRepository extends Repository<
     }
   }
 
-  /**
-   * Returns the active subscription for a tenant.
-   *
-   * If multiple active records somehow exist,
-   * the newest one is returned.
-   */
   public async findActiveByTenant(
     tenantId: UUID,
   ): Promise<SubscriptionRecord | null> {
@@ -456,10 +397,7 @@ export class SubscriptionRepository extends Repository<
             updated_at
           FROM subscriptions
           WHERE tenant_id = $1
-            AND status IN (
-              'trialing',
-              'active'
-            )
+            AND status IN ('trialing', 'active')
           ORDER BY created_at DESC
           LIMIT 1
         `,
