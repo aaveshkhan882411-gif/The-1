@@ -17,7 +17,7 @@ export interface DropdownMenuProps {
   className?: string;
 }
 
-const DropdownMenu = React.forwardRef<
+export const DropdownMenu = React.forwardRef<
   HTMLDivElement,
   DropdownMenuProps
 >(function DropdownMenu(
@@ -112,4 +112,20 @@ const DropdownMenu = React.forwardRef<
               onClick={() => handleItemSelect(item)}
               className={[
                 "flex w-full items-center rounded-lg px-3 py-2.5",
-                "text-left text-sm
+                "text-left text-sm transition-colors duration-150",
+                item.disabled
+                  ? "opacity-50 cursor-not-allowed"
+                  : item.destructive
+                  ? "text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                  : "text-white/80 hover:bg-white/[0.06] hover:text-white",
+              ].join(" ")}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
