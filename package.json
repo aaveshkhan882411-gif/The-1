@@ -12,8 +12,8 @@
     "test": "node --test"
   },
   "dependencies": {
-    "@upstash/ratelimit": "^2.0.7",
-    "@upstash/redis": "^1.35.3",
+    "@upstash/ratelimit": "2.0.8",
+    "@upstash/redis": "1.38.3",
     "lucide-react": "^1.16.0",
     "next": "15.2.1",
     "pg": "^8.16.3",
