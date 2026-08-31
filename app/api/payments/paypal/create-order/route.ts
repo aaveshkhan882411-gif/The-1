@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { paypalClient } from "../../../../lib/payments/paypal-client";
+// यहाँ हमने रास्ता ठीक कर दिया है (एक एक्स्ट्रा '../' जोड़कर)
+import { paypalClient } from "../../../../../lib/payments/paypal-client";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +14,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // यहीं पर एरर आ रहा था, अब हमने इसे सही कर दिया है!
     const order = await paypalClient.createOrder(amount.toString(), "USD");
 
     return NextResponse.json({
