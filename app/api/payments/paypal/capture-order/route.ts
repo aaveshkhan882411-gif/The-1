@@ -1,37 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SubscriptionManager } from "@/lib/payments/subscription-manager";
+import { subscriptionManager } from "../../../../../lib/payments/subscription-manager";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { orderId, tenantId, planId } = body;
+    const { orderId, tenantId } = body;
 
-    if (!orderId || !tenantId || !planId) {
+    if (!orderId || !tenantId) {
       return NextResponse.json(
-        { error: "orderId, tenantId, and planId are required" },
+        { error: "orderId and tenantId are required." },
         { status: 400 }
       );
     }
 
-    const subscriptionManager = new SubscriptionManager();
-    const result = await subscriptionManager.handleOrderCaptureAndActivation(
-      tenantId,
+    const result = await subscriptionManager.captureAndActivate({
       orderId,
-      planId
-    );
+      tenantId
+    });
 
-    return NextResponse.json(
-      {
-        message: "Payment captured and subscription activated successfully",
-        subscription: result.subscription
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({
+      success: true,
+      message: "Payment captured and subscription activated.",
+      data: result
+    });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Failed to capture payment and activate subscription" },
+      { error: "Capture Order Failed", details: error.message },
       { status: 500 }
     );
   }
 }
-
