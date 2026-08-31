@@ -14,7 +14,7 @@ export interface AgentRecord {
 }
 
 export const agentRepository = {
-  async findByIdAndTenant(id: string, tenantId: string): Promise<AgentRecord null |> {
+  async findByIdAndTenant(id: string, tenantId: string): Promise<AgentRecord | null> {
     const res = await query(
       "SELECT * FROM agents WHERE id = $1 AND tenant_id = $2 LIMIT 1",
       [id, tenantId]
@@ -56,7 +56,7 @@ export const agentRepository = {
     return res.rows[0];
   },
 
-  async updateStatus(id: string, tenantId: string, status: string): Promise<AgentRecord null |> {
+  async updateStatus(id: string, tenantId: string, status: string): Promise<AgentRecord | null> {
     const res = await query(
       `UPDATE agents SET status = $1, updated_at = NOW()
        WHERE id = $2 AND tenant_id = $3
