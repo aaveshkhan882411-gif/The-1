@@ -1,5 +1,11 @@
-import { AgentRepository } from "../database/repositories/agent-repository";
+import * as AgentRepoModule from "../database/repositories/agent-repository";
 import { DatabaseRecord } from "../database/types";
+
+// Get constructor or instance whether it is default or named export
+const RepoClass: any =
+  (AgentRepoModule as any).AgentRepository ||
+  (AgentRepoModule as any).default ||
+  AgentRepoModule;
 
 export type AgentStatus = "active" | "inactive" | "paused" | "error";
 
@@ -39,10 +45,16 @@ export interface UpdateAgentInput {
 }
 
 export class AgentService {
-  private agentRepo: AgentRepository;
+  private agentRepo: any;
 
-  constructor(agentRepo?: AgentRepository) {
-    this.agentRepo = agentRepo || new AgentRepository();
+  constructor(agentRepo?: any) {
+    if (agentRepo) {
+      this.agentRepo = agentRepo;
+    } else if (typeof RepoClass === "function") {
+      this.agentRepo = new RepoClass();
+    } else {
+      this.agentRepo = RepoClass;
+    }
   }
 
   async getAgentById(tenantId: string, agentId: string): Promise<DatabaseRecord | null> {
@@ -50,10 +62,10 @@ export class AgentService {
       throw new Error("Tenant ID and Agent ID are required.");
     }
     const agent = await this.agentRepo.findById(agentId);
-    if (!agent || agent.tenant_id !== tenantId) {
+    if (!agent || (agent as any).tenant_id !== tenantId) {
       return null;
     }
-    return agent;
+    return agent as DatabaseRecord;
   }
 
   async listAgents(tenantId: string, status?: AgentStatus): Promise<DatabaseRecord[]> {
@@ -64,7 +76,8 @@ export class AgentService {
     if (status) {
       criteria.status = status;
     }
-    return await this.agentRepo.findMany(criteria);
+    const result = await this.agentRepo.findMany(criteria);
+    return (result || []) as DatabaseRecord[];
   }
 
   async createAgent(input: CreateAgentInput): Promise<DatabaseRecord> {
@@ -72,7 +85,7 @@ export class AgentService {
       throw new Error("Tenant ID, Agent Name, and Agent Type are required.");
     }
 
-    return await this.agentRepo.create({
+    const created = await this.agentRepo.create({
       tenant_id: input.tenant_id,
       name: input.name.trim(),
       type: input.type,
@@ -84,6 +97,8 @@ export class AgentService {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     });
+
+    return created as DatabaseRecord;
   }
 
   async updateAgent(
@@ -111,14 +126,20 @@ export class AgentService {
     if (input.allowed_tools !== undefined) updateData.allowed_tools = JSON.stringify(input.allowed_tools);
     if (input.status !== undefined) updateData.status = input.status;
 
-    return await this.agentRepo.update(agentId, updateData);
+    const updated = await this.agentRepo.update(agentId, updateData);
+    return updated as DatabaseRecord;
   }
 
   async countActiveAgents(tenantId: string): Promise<number> {
     if (!tenantId) {
       throw new Error("Tenant ID is required.");
     }
-    return await this.agentRepo.countActiveByTenant(tenantId);
+    if (typeof this.agentRepo.countActiveByTenant === "function") {
+      return await this.agentRepo.countActiveByTenant(tenantId);
+    }
+    const active = await this.listAgents(tenantId, "active");
+    return active.length;
   }
 }
 
+export default AgentService;
