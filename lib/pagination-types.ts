@@ -1,22 +1,33 @@
-import 'server-only';
-
 /**
  * @file lib/pagination-types.ts
- * @description Shared pagination types for GrowthAI.
+ * @description Standard pagination and filtering types for GrowthAI SaaS.
  */
 
-export interface PageRequest {
-  readonly page?: number;
-  readonly pageSize?: number;
+export interface PaginationParams {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
-export interface PageMeta {
-  readonly page: number;
-  readonly pageSize: number;
-  readonly totalItems: number;
-  readonly totalPages: number;
-  readonly hasNextPage: boolean;
-  readonly hasPreviousPage: boolean;
+export interface PaginationMetadata {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
 }
 
-export interface Paginated
+export interface PaginatedResult<T> {
+  data: T[];
+  pagination: PaginationMetadata;
+}
+
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
