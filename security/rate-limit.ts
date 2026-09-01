@@ -2,7 +2,7 @@ import 'server-only';
 
 /**
  * @file security/rate-limit.ts
- * @description In-memory fallback rate limiter with full property compatibility.
+ * @description Synchronous in-memory rate limiter compatible with non-async middleware calls.
  */
 
 export interface RateLimitConfig {
@@ -27,10 +27,10 @@ interface RateLimitRecord {
 
 const rateLimitStore = new Map<string, RateLimitRecord>();
 
-export async function rateLimit(
+export function rateLimit(
   identifier: string,
   config?: RateLimitConfig
-): Promise<RateLimitResult> {
+): RateLimitResult {
   const maxRequests = config?.requests ?? config?.limit ?? 60;
   const windowTime = config?.windowMs ?? config?.window ?? 60 * 1000;
 
