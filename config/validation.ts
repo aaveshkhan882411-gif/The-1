@@ -611,35 +611,34 @@ export function safeValidate<TSchema extends GenericSchema>(
         }
         }
 
-       return '';
-  })
-  .filter(Boolean)
-  .join('.');
+      return pathSegments.map((segment: any) => {
+      if (typeof segment === 'string' || typeof segment === 'number') {
+        return String(segment);
+      }
+      if ('key' in segment && segment.key !== undefined) {
+        return String(segment.key);
+      }
+      if ('index' in segment && segment.index !== undefined) {
+        return String(segment.index);
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join('.');
 
-  const fieldName = path || '_root';
+    const fieldName = path || '_root';
 
-  if (!fieldIssues[fieldName]) {
-    fieldIssues[fieldName] = issue.message;
+    if (!fieldIssues[fieldName]) {
+      fieldIssues[fieldName] = issue.message;
+    }
   }
+
+  return {
+    success: false,
+    error: {
+      message: "Validation failed",
+      issues: fieldIssues
+    }
+  };
 }
-
-return {
-  success: false,
-  error: {
-    message: "Validation failed",
-    issues: fieldIssues
-  }
-};
- 
-        
-        
-
-      
-        
-          
-          
-    
-  
-
-
-
+     
