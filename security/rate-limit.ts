@@ -2,7 +2,7 @@ import 'server-only';
 
 /**
  * @file security/rate-limit.ts
- * @description Synchronous in-memory rate limiter compatible with non-async middleware calls.
+ * @description In-memory synchronous rate limiter with full header compatibility.
  */
 
 export interface RateLimitConfig {
@@ -18,6 +18,7 @@ export interface RateLimitResult {
   limit: number;
   remaining: number;
   reset: number;
+  retryAfterSeconds: number;
 }
 
 interface RateLimitRecord {
@@ -38,9 +39,10 @@ export function rateLimit(
   const record = rateLimitStore.get(identifier);
 
   if (!record || now > record.resetTime) {
+    const resetTime = now + windowTime;
     rateLimitStore.set(identifier, {
       count: 1,
-      resetTime: now + windowTime,
+      resetTime,
     });
 
     return {
@@ -48,9 +50,12 @@ export function rateLimit(
       allowed: true,
       limit: maxRequests,
       remaining: maxRequests - 1,
-      reset: Math.floor((now + windowTime) / 1000),
+      reset: Math.floor(resetTime / 1000),
+      retryAfterSeconds: Math.ceil(windowTime / 1000),
     };
   }
+
+  const remainingTimeSeconds = Math.max(0, Math.ceil((record.resetTime - now) / 1000));
 
   if (record.count >= maxRequests) {
     return {
@@ -59,6 +64,7 @@ export function rateLimit(
       limit: maxRequests,
       remaining: 0,
       reset: Math.floor(record.resetTime / 1000),
+      retryAfterSeconds: remainingTimeSeconds,
     };
   }
 
@@ -70,6 +76,7 @@ export function rateLimit(
     limit: maxRequests,
     remaining: maxRequests - record.count,
     reset: Math.floor(record.resetTime / 1000),
+    retryAfterSeconds: remainingTimeSeconds,
   };
 }
 
