@@ -606,8 +606,9 @@ export function safeValidate<TSchema extends GenericSchema>(
           return String(segment.key);
         }
 
-        if (segment.index !== undefined) {
+        if ('index' in segment && segment.index !== undefined) {
           return String((segment as any).index);
+        }
         }
 
         return '';
