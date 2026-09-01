@@ -1,5 +1,8 @@
-DATABASE
-001–011 migrations  ✅
+/**
+ * DATABASE
+ * 001-011 migrations
+ */
+
         ↓
 12. database/repositories/user.ts       ⬅️ NEXT
 13. database/repositories/tenant.ts
