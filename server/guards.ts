@@ -1,24 +1,10 @@
 import 'server-only';
+import { ServerError } from './errors';
 
 /**
  * @file server/guards.ts
- * @description Server-side route & action guards with typed error handling.
+ * @description Server-side route & action guards using centralized ServerError.
  */
-
-export class ServerError extends Error {
-  public readonly code: string;
-  public readonly statusCode: number;
-
-  constructor(
-    code: string,
-    options?: { message?: string; statusCode?: number; cause?: unknown }
-  ) {
-    super(options?.message || code);
-    this.name = 'ServerError';
-    this.code = code;
-    this.statusCode = options?.statusCode || 500;
-  }
-}
 
 export interface GuardContext {
   user?: {
@@ -39,7 +25,7 @@ export function requireAuth() {
       throw new ServerError('UNAUTHORIZED', {
         message: 'Authentication is required.',
         statusCode: 401,
-      });
+      } as any);
     }
     return context.user;
   };
@@ -54,14 +40,14 @@ export function requireRole(allowedRoles: string[]) {
       throw new ServerError('UNAUTHORIZED', {
         message: 'Authentication is required.',
         statusCode: 401,
-      });
+      } as any);
     }
 
     if (!allowedRoles.includes(context.user.role)) {
       throw new ServerError('FORBIDDEN', {
         message: 'You do not have permission to perform this action.',
         statusCode: 403,
-      });
+      } as any);
     }
 
     return context.user;
@@ -76,7 +62,6 @@ export function requireTenantAdmin() {
 }
 
 export default {
-  ServerError,
   requireAuth,
   requireRole,
   requireTenantAdmin,
