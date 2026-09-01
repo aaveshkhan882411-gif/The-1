@@ -183,8 +183,6 @@ export function isTenantAdminOrOwner(
     return false;
   }
 
-  export function isOwnerOrAdmin(user: { role: unknown }): boolean {
   return (user.role as string) === 'owner' || (user.role as string) === 'admin';
 }
 
-}
