@@ -2,12 +2,14 @@ import 'server-only';
 
 /**
  * @file security/rate-limit.ts
- * @description In-memory fallback rate limiter (no external dependencies required).
+ * @description In-memory fallback rate limiter with multi-export compatibility.
  */
 
 export interface RateLimitConfig {
-  requests: number;
-  windowMs: number;
+  requests?: number;
+  windowMs?: number;
+  limit?: number;
+  window?: number;
 }
 
 interface RateLimitRecord {
@@ -19,29 +21,32 @@ const rateLimitStore = new Map<string, RateLimitRecord>();
 
 export async function rateLimit(
   identifier: string,
-  config: RateLimitConfig = { requests: 60, windowMs: 60 * 1000 }
+  config?: RateLimitConfig
 ): Promise<{ success: boolean; limit: number; remaining: number; reset: number }> {
+  const maxRequests = config?.requests ?? config?.limit ?? 60;
+  const windowTime = config?.windowMs ?? config?.window ?? 60 * 1000;
+
   const now = Date.now();
   const record = rateLimitStore.get(identifier);
 
   if (!record || now > record.resetTime) {
     rateLimitStore.set(identifier, {
       count: 1,
-      resetTime: now + config.windowMs,
+      resetTime: now + windowTime,
     });
 
     return {
       success: true,
-      limit: config.requests,
-      remaining: config.requests - 1,
-      reset: Math.floor((now + config.windowMs) / 1000),
+      limit: maxRequests,
+      remaining: maxRequests - 1,
+      reset: Math.floor((now + windowTime) / 1000),
     };
   }
 
-  if (record.count >= config.requests) {
+  if (record.count >= maxRequests) {
     return {
       success: false,
-      limit: config.requests,
+      limit: maxRequests,
       remaining: 0,
       reset: Math.floor(record.resetTime / 1000),
     };
@@ -51,10 +56,13 @@ export async function rateLimit(
 
   return {
     success: true,
-    limit: config.requests,
-    remaining: config.requests - record.count,
+    limit: maxRequests,
+    remaining: maxRequests - record.count,
     reset: Math.floor(record.resetTime / 1000),
   };
 }
+
+// Named alias for middleware compatibility
+export const checkRateLimit = rateLimit;
 
 export default rateLimit;
