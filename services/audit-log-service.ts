@@ -1,5 +1,11 @@
-import { AuditLogRepository } from "../database/repositories/audit-log-repository";
+import * as AuditRepoModule from "../database/repositories/audit-log-repository";
 import { DatabaseRecord } from "../database/types";
+
+// Get constructor or instance whether it is default or named export
+const RepoClass: any =
+  (AuditRepoModule as any).AuditLogRepository ||
+  (AuditRepoModule as any).default ||
+  AuditRepoModule;
 
 export interface CreateAuditLogInput {
   tenant_id: string;
@@ -12,10 +18,16 @@ export interface CreateAuditLogInput {
 }
 
 export class AuditLogService {
-  private auditRepo: AuditLogRepository;
+  private auditRepo: any;
 
-  constructor(auditRepo?: AuditLogRepository) {
-    this.auditRepo = auditRepo || new AuditLogRepository();
+  constructor(auditRepo?: any) {
+    if (auditRepo) {
+      this.auditRepo = auditRepo;
+    } else if (typeof RepoClass === "function") {
+      this.auditRepo = new RepoClass();
+    } else {
+      this.auditRepo = RepoClass;
+    }
   }
 
   async logEvent(input: CreateAuditLogInput): Promise<DatabaseRecord> {
@@ -23,7 +35,7 @@ export class AuditLogService {
       throw new Error("Tenant ID and event name are required for audit logging.");
     }
 
-    return await this.auditRepo.create({
+    const payload = {
       tenant_id: input.tenant_id,
       user_id: input.user_id || null,
       event: input.event,
@@ -31,8 +43,16 @@ export class AuditLogService {
       ip_address: input.ip_address || null,
       user_agent: input.user_agent || null,
       metadata: JSON.stringify(input.metadata || {}),
-      created_at: new Date().toISOString()
-    });
+      created_at: new Date().toISOString(),
+    };
+
+    const created = await this.auditRepo.create(payload);
+
+    return {
+      id: (created as any)?.id || crypto.randomUUID(),
+      created_at: payload.created_at,
+      ...created,
+    } as DatabaseRecord;
   }
 
   async listAuditLogs(
@@ -49,7 +69,9 @@ export class AuditLogService {
     if (filters?.user_id) criteria.user_id = filters.user_id;
     if (filters?.event) criteria.event = filters.event;
 
-    return await this.auditRepo.findMany(criteria, { limit, offset });
+    const results = await this.auditRepo.findMany(criteria, { limit, offset });
+    return (results || []) as DatabaseRecord[];
   }
 }
 
+export default AuditLogService;
