@@ -227,10 +227,10 @@ export function authorizeAdminOrOwner(
     };
   }
 
-      if (
-      (user.role as string) !== 'owner' &&
-      (user.role as string) !== 'admin'
-    ) {
+  if (
+    (user.role as string) !== 'owner' &&
+    (user.role as string) !== 'admin'
+  ) {
     return {
       authorized: false,
       reason:
@@ -251,7 +251,7 @@ export function requirePermission(
     authorizePermission(user, permission);
 
   if (!result.authorized) {
-    throw new Error(result.reason);
+    throw new Error((result as { reason: string }).reason || 'Access denied');
   }
 }
 
@@ -266,7 +266,7 @@ export function requireAnyPermission(
     );
 
   if (!result.authorized) {
-    throw new Error(result.reason);
+    throw new Error((result as { reason: string }).reason || 'Access denied');
   }
 }
 
@@ -281,7 +281,7 @@ export function requireAllPermissions(
     );
 
   if (!result.authorized) {
-    throw new Error(result.reason);
+    throw new Error((result as { reason: string }).reason || 'Access denied');
   }
 }
 
@@ -296,7 +296,7 @@ export function requireTenantAccess(
     );
 
   if (!result.authorized) {
-    throw new Error(result.reason);
+    throw new Error((result as { reason: string }).reason || 'Access denied');
   }
 }
 
@@ -307,6 +307,6 @@ export function requireAdminOrOwner(
     authorizeAdminOrOwner(user);
 
   if (!result.authorized) {
-    throw new Error(result.reason);
+    throw new Error((result as { reason: string }).reason || 'Access denied');
   }
 }
