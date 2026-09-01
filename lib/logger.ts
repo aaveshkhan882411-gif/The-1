@@ -193,4 +193,28 @@ export function logError(
   exception: unknown,
   metadata?: LogMetadata
 ): void {
-  const error
+  const errorDetails = exception instanceof Error
+    ? {
+        name: exception.name,
+        message: exception.message,
+        stack: process.env.NODE_ENV === 'production' ? undefined : exception.stack,
+      }
+    : { error: String(exception) };
+
+  const combinedMetadata = {
+    ...metadata,
+    ...errorDetails,
+  };
+
+  writeLog(createEntry('error', message, combinedMetadata));
+}
+
+export const logger = {
+  debug,
+  info,
+  warn,
+  error,
+  logError,
+};
+
+export default logger;
