@@ -601,30 +601,22 @@ export function safeValidate<TSchema extends GenericSchema>(
 
   for (const issue of result.issues) {
     const path = issue.path
-      ?.map((segment) => {
-        if (segment.key !== undefined) {
-          return String(segment.key);
+      ?.map((segment: any) => {
+        if (typeof segment === 'string' || typeof segment === 'number') {
+          return String(segment);
         }
-
-        if ('index' in segment && segment.index !== undefined) {
-          return String((segment as any).index);
+        if (segment && typeof segment === 'object') {
+          if ('key' in segment && segment.key !== undefined) {
+            return String(segment.key);
+          }
+          if ('index' in segment && segment.index !== undefined) {
+            return String(segment.index);
+          }
         }
-        }
-
-      return pathSegments.map((segment: any) => {
-      if (typeof segment === 'string' || typeof segment === 'number') {
-        return String(segment);
-      }
-      if ('key' in segment && segment.key !== undefined) {
-        return String(segment.key);
-      }
-      if ('index' in segment && segment.index !== undefined) {
-        return String(segment.index);
-      }
-      return '';
-    })
-    .filter(Boolean)
-    .join('.');
+        return '';
+      })
+      .filter(Boolean)
+      .join('.');
 
     const fieldName = path || '_root';
 
@@ -636,9 +628,8 @@ export function safeValidate<TSchema extends GenericSchema>(
   return {
     success: false,
     error: {
-      message: "Validation failed",
-      issues: fieldIssues
-    }
+      message: 'Validation failed',
+      issues: fieldIssues,
+    },
   };
 }
-     
