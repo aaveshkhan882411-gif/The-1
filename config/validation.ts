@@ -611,31 +611,35 @@ export function safeValidate<TSchema extends GenericSchema>(
         }
         }
 
-        return '';
-      })
-      .filter(Boolean)
-      .join('.');
+       return '';
+  })
+  .filter(Boolean)
+  .join('.');
 
-    const fieldName = path || '_root';
+  const fieldName = path || '_root';
 
-    if (!fieldIssues[fieldName]) {
-      fieldIssues[fieldName] = issue.message;
-    }
+  if (!fieldIssues[fieldName]) {
+    fieldIssues[fieldName] = issue.message;
   }
-
-  return {
-    success: false,
-    error: {
-      message:
-        result.issues[0]?.message ||
-        'Validation failed.',
-
-      issues:
-        Object.keys(fieldIssues).length > 0
-          ? fieldIssues
-          : undefined,
-    },
-  };
 }
 
-export default Schemas;
+return {
+  success: false,
+  error: {
+    message: "Validation failed",
+    issues: fieldIssues
+  }
+};
+ 
+        
+        
+
+      
+        
+          
+          
+    
+  
+
+
+
