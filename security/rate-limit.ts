@@ -2,7 +2,7 @@ import 'server-only';
 
 /**
  * @file security/rate-limit.ts
- * @description In-memory fallback rate limiter with multi-export compatibility.
+ * @description In-memory fallback rate limiter with full property compatibility.
  */
 
 export interface RateLimitConfig {
@@ -10,6 +10,14 @@ export interface RateLimitConfig {
   windowMs?: number;
   limit?: number;
   window?: number;
+}
+
+export interface RateLimitResult {
+  success: boolean;
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  reset: number;
 }
 
 interface RateLimitRecord {
@@ -22,7 +30,7 @@ const rateLimitStore = new Map<string, RateLimitRecord>();
 export async function rateLimit(
   identifier: string,
   config?: RateLimitConfig
-): Promise<{ success: boolean; limit: number; remaining: number; reset: number }> {
+): Promise<RateLimitResult> {
   const maxRequests = config?.requests ?? config?.limit ?? 60;
   const windowTime = config?.windowMs ?? config?.window ?? 60 * 1000;
 
@@ -37,6 +45,7 @@ export async function rateLimit(
 
     return {
       success: true,
+      allowed: true,
       limit: maxRequests,
       remaining: maxRequests - 1,
       reset: Math.floor((now + windowTime) / 1000),
@@ -46,6 +55,7 @@ export async function rateLimit(
   if (record.count >= maxRequests) {
     return {
       success: false,
+      allowed: false,
       limit: maxRequests,
       remaining: 0,
       reset: Math.floor(record.resetTime / 1000),
@@ -56,13 +66,12 @@ export async function rateLimit(
 
   return {
     success: true,
+    allowed: true,
     limit: maxRequests,
     remaining: maxRequests - record.count,
     reset: Math.floor(record.resetTime / 1000),
   };
 }
 
-// Named alias for middleware compatibility
 export const checkRateLimit = rateLimit;
-
 export default rateLimit;
