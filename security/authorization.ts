@@ -227,10 +227,10 @@ export function authorizeAdminOrOwner(
     };
   }
 
-  if (
-    user.role !== 'owner' &&
-    user.role !== 'admin'
-  ) {
+      if (
+      (user.role as string) !== 'owner' &&
+      (user.role as string) !== 'admin'
+    ) {
     return {
       authorized: false,
       reason:
