@@ -1,5 +1,11 @@
-import { LeadRepository } from "../database/repositories/lead-repository";
+import * as LeadRepoModule from "../database/repositories/lead-repository";
 import { DatabaseRecord } from "../database/types";
+
+// Get constructor or instance whether it is default or named export
+const RepoClass: any =
+  (LeadRepoModule as any).LeadRepository ||
+  (LeadRepoModule as any).default ||
+  LeadRepoModule;
 
 export type LeadStatus =
   | "new"
@@ -37,10 +43,16 @@ export interface UpdateLeadInput {
 }
 
 export class LeadService {
-  private leadRepo: LeadRepository;
+  private leadRepo: any;
 
-  constructor(leadRepo?: LeadRepository) {
-    this.leadRepo = leadRepo || new LeadRepository();
+  constructor(leadRepo?: any) {
+    if (leadRepo) {
+      this.leadRepo = leadRepo;
+    } else if (typeof RepoClass === "function") {
+      this.leadRepo = new RepoClass();
+    } else {
+      this.leadRepo = RepoClass;
+    }
   }
 
   async getLeadById(tenantId: string, leadId: string): Promise<DatabaseRecord | null> {
@@ -48,10 +60,16 @@ export class LeadService {
       throw new Error("Tenant ID and Lead ID are required.");
     }
     const lead = await this.leadRepo.findById(leadId);
-    if (!lead || lead.tenant_id !== tenantId) {
+    if (!lead) {
       return null;
     }
-    return lead;
+
+    const leadTenantId = (lead as any).tenantId || (lead as any).tenant_id;
+    if (leadTenantId !== tenantId) {
+      return null;
+    }
+
+    return lead as DatabaseRecord;
   }
 
   async createLead(input: CreateLeadInput): Promise<DatabaseRecord> {
@@ -59,8 +77,9 @@ export class LeadService {
       throw new Error("Tenant ID and Lead Name are required.");
     }
 
-    return await this.leadRepo.create({
+    const payload = {
       tenant_id: input.tenant_id,
+      tenantId: input.tenant_id,
       name: input.name.trim(),
       email: input.email ? input.email.toLowerCase().trim() : null,
       phone: input.phone || null,
@@ -69,13 +88,16 @@ export class LeadService {
       status: "new",
       notes: input.notes || null,
       assigned_agent_id: input.assigned_agent_id || null,
-      metadata: JSON.stringify({
+      metadata: {
         score: input.score ?? 0,
         ...(input.metadata || {})
-      }),
+      },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    });
+    };
+
+    const created = await this.leadRepo.create(payload);
+    return created as DatabaseRecord;
   }
 
   async updateLead(
@@ -93,7 +115,8 @@ export class LeadService {
     }
 
     const updateData: Record<string, unknown> = {
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      updatedAt: new Date()
     };
 
     if (input.name !== undefined) updateData.name = input.name.trim();
@@ -108,10 +131,11 @@ export class LeadService {
     if (input.metadata !== undefined || input.score !== undefined) {
       let existingMetadata: Record<string, unknown> = {};
       try {
-        if (typeof lead.metadata === "string") {
-          existingMetadata = JSON.parse(lead.metadata);
-        } else if (typeof lead.metadata === "object" && lead.metadata !== null) {
-          existingMetadata = lead.metadata as Record<string, unknown>;
+        const rawMeta = (lead as any).metadata;
+        if (typeof rawMeta === "string") {
+          existingMetadata = JSON.parse(rawMeta);
+        } else if (typeof rawMeta === "object" && rawMeta !== null) {
+          existingMetadata = rawMeta as Record<string, unknown>;
         }
       } catch {
         existingMetadata = {};
@@ -126,10 +150,11 @@ export class LeadService {
         mergedMetadata.score = input.score;
       }
 
-      updateData.metadata = JSON.stringify(mergedMetadata);
+      updateData.metadata = mergedMetadata;
     }
 
-    return await this.leadRepo.update(leadId, updateData);
+    const updated = await this.leadRepo.update(leadId, updateData);
+    return updated as DatabaseRecord;
   }
 
   async listLeads(
@@ -142,18 +167,24 @@ export class LeadService {
       throw new Error("Tenant ID is required.");
     }
 
-    const criteria: Record<string, unknown> = { tenant_id: tenantId };
+    const criteria: Record<string, unknown> = { tenantId, tenant_id: tenantId };
     if (filters?.status) criteria.status = filters.status;
     if (filters?.assigned_agent_id) criteria.assigned_agent_id = filters.assigned_agent_id;
 
-    return await this.leadRepo.findMany(criteria, { limit, offset });
+    const results = await this.leadRepo.findMany(criteria, { limit, offset });
+    return (results || []) as DatabaseRecord[];
   }
 
   async countLeads(tenantId: string): Promise<number> {
     if (!tenantId) {
       throw new Error("Tenant ID is required.");
     }
-    return await this.leadRepo.countByTenant(tenantId);
+    if (typeof this.leadRepo.countByTenant === "function") {
+      return await this.leadRepo.countByTenant(tenantId);
+    }
+    const leads = await this.listLeads(tenantId);
+    return leads.length;
   }
 }
 
+export default LeadService;
